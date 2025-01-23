@@ -1,0 +1,69 @@
+---
+- name: Install Python packages
+  apt:
+    name:
+      - python3-kubernetes
+      - python3-yaml
+      - python3-jsonpatch
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Install NGINX Ingress Controller
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    src: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+
+- name: Wait for Ingress Controller to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    kind: Pod
+    namespace: ingress-nginx
+    label_selectors:
+      - app.kubernetes.io/component=controller
+  register: ingress_pods
+  until: ingress_pods.resources | length > 0 and ingress_pods.resources[0].status.phase == "Running"
+  retries: 30
+  delay: 10
+
+- name: Create WordPress namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ wp_namespace }}"
+
+- name: Create WordPress resources
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: "{{ item }}"
+    namespace: "{{ wp_namespace }}"
+  loop:
+    - storage.yaml.j2
+    - configmap.yaml.j2
+    - secret.yaml.j2
+    - deployment.yaml.j2
+    - service.yaml.j2
+
+- name: Apply Ingress
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: ingress.yaml.j2
+    namespace: "{{ wp_namespace }}"
+
+- name: Wait for WordPress deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    kind: Deployment
+    name: wordpress
+    namespace: "{{ wp_namespace }}"
+  register: wp_deployment
+  until: wp_deployment.resources[0].status.availableReplicas is defined and wp_deployment.resources[0].status.availableReplicas > 0
+  retries: 30
+  delay: 10

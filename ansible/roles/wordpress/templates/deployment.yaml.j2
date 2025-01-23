@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+spec:
+  replicas: {{ wp_replicas }}
+  selector:
+    matchLabels:
+      app: wordpress
+  template:
+    metadata:
+      labels:
+        app: wordpress
+    spec:
+      containers:
+      - name: wordpress
+        image: wordpress:latest
+        ports:
+        - containerPort: 80
+        envFrom:
+        - configMapRef:
+            name: wordpress-config
+        - secretRef:
+            name: wordpress-secret
+        volumeMounts:
+        - name: wordpress-data
+          mountPath: /var/www/html
+        resources:
+          requests:
+            memory: "{{ wp_memory_request }}"
+            cpu: "{{ wp_cpu_request }}"
+          limits:
+            memory: "{{ wp_memory_limit }}"
+            cpu: "{{ wp_cpu_limit }}"
+      volumes:
+      - name: wordpress-data
+        persistentVolumeClaim:
+          claimName: wp-pvc

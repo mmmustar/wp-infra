@@ -1,0 +1,24 @@
+---
+# WordPress Configuration
+wp_namespace: wordpress
+wp_domain: wordpress.example.com
+wp_replicas: 2
+
+# Storage Configuration
+storage_class_name: ebs-sc
+storage_size: 10Gi
+
+# Resource Limits
+wp_memory_request: 256Mi
+wp_memory_limit: 512Mi
+wp_cpu_request: 250m
+wp_cpu_limit: 500m
+
+# Database Configuration
+db_host: "{{ lookup('env', 'RDS_ENDPOINT') }}"
+db_name: wordpress
+db_user: admin
+db_password: "{{ lookup('env', 'DB_PASSWORD') }}"
+
+# Kubernetes Configuration
+kubeconfig: /etc/rancher/k3s/k3s.yaml
