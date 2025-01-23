@@ -1,20 +1,14 @@
-# roles/common/handlers/main.yml
 - name: Update package cache
-  ansible.builtin.command: yum makecache
-  become: yes
-
-- name: Install python3-dnf
-  ansible.builtin.command: yum install -y python3-dnf
+  apt:
+    update_cache: yes
   become: yes
 
 - name: Install system packages
-  ansible.builtin.dnf:
+  apt:
     name:
       - python3
       - python3-pip
       - git
       - vim
     state: present
-    update_cache: yes
-    use_backend: dnf4
   become: yes
