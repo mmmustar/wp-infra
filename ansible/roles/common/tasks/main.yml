@@ -1,14 +1,17 @@
-- name: Update package cache
-  apt:
-    update_cache: yes
-  become: yes
+# roles/common/common/main.yml
+---
+- block:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+      become: true
 
-- name: Install system packages
-  apt:
-    name:
-      - python3
-      - python3-pip
-      - git
-      - vim
-    state: present
-  become: yes
+    - name: Install system packages
+      apt:
+        name:
+          - python3
+          - python3-pip
+          - git
+          - vim
+        state: present
+      become: true
