@@ -1,0 +1,6 @@
+# roles/k3s/handlers/main.yml
+---
+- name: restart k3s
+  service:
+    name: k3s
+    state: restarted

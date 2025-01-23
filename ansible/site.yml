@@ -1,0 +1,18 @@
+# ansible/site.yml
+
+- name: Configuration complète des serveurs WordPress
+  hosts: wordpress
+  become: true
+
+  pre_tasks:
+    - name: Install Python 3 if not already installed
+      raw: |
+        sudo yum install -y python3
+      changed_when: false
+
+  roles:
+    - common
+    - docker
+    - k3s
+  vars:
+    ansible_pkg_mgr: yum

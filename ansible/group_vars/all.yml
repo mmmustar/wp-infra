@@ -1,0 +1,5 @@
+# ansible/group_vars/all.yml
+---
+# Variables globales communes à tous les serveurs
+timezone: UTC
+environment: test

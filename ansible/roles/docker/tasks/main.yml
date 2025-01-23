@@ -1,0 +1,38 @@
+- name: Install Docker 
+  dnf:
+    name:
+      - docker
+      - docker-compose-plugin
+    state: present
+  
+- name: Start and enable Docker
+  service:
+    name: docker 
+    state: started
+    enabled: yes
+
+- name: Add users to docker group
+  user:
+    name: "{{ item }}" 
+    groups: docker
+    append: yes
+  with_items: "{{ docker_users }}"
+
+- name: Create docker config directory 
+  file:
+    path: /etc/docker
+    state: directory
+    mode: '0755'
+
+- name: Configure Docker daemon
+  copy:
+    content: |
+      {
+        "log-driver": "json-file", 
+        "log-opts": {
+          "max-size": "100m",
+          "max-file": "3" 
+        }
+      }
+    dest: /etc/docker/daemon.json
+  notify: restart docker

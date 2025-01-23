@@ -1,0 +1,4 @@
+# roles/k3s/defaults/main.yml
+---
+k3s_version: v1.28.4+k3s2
+k3s_server_args: --disable servicelb --disable traefik

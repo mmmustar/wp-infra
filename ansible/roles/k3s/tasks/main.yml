@@ -1,0 +1,35 @@
+# roles/k3s/tasks/main.yml
+---
+- name: Download k3s installer
+  get_url:
+    url: https://get.k3s.io
+    dest: /tmp/k3s-installer
+    mode: '0755'
+
+- name: Install k3s
+  command:
+    cmd: /tmp/k3s-installer
+    creates: /usr/local/bin/k3s
+  environment:
+    INSTALL_K3S_VERSION: "{{ k3s_version }}"
+    INSTALL_K3S_EXEC: "{{ k3s_server_args }}"
+
+- name: Wait for k3s to be up
+  wait_for:
+    path: /etc/rancher/k3s/k3s.yaml
+    delay: 5
+    timeout: 300
+
+- name: Configure kubectl for the current user
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: ~/.kube/config
+    mode: '0600'
+    remote_src: yes
+  become: false
+
+- name: Test k3s installation
+  command: kubectl get nodes
+  register: kubectl_test
+  changed_when: false
+  become: false
