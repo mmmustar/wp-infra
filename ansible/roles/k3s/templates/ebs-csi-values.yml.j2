@@ -1,0 +1,22 @@
+controller:
+  region: eu-west-3
+  serviceAccount:
+    create: true
+    name: ebs-csi-controller-sa
+    annotations:
+      eks.amazonaws.com/role-arn: "arn:aws:iam::{{ aws_account_id }}:role/{{ aws_ebs_csi_role_name }}"
+
+node:
+  serviceAccount:
+    create: true
+    name: ebs-csi-node-sa
+
+storageClasses:
+- name: ebs-sc
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  volumeBindingMode: WaitForFirstConsumer
+  allowVolumeExpansion: true
+  reclaimPolicy: Delete
+  parameters:
+    type: gp3

@@ -1,5 +1,12 @@
 # roles/k3s/tasks/main.yml
 ---
+#0 get secrets
+- name: Fetch and set AWS secrets
+  include_tasks: ebs-csi.yml
+  when: ebs_csi_enabled
+
+
+# 1. K3s Setup
 - name: Set permissions for k3s config
   file:
     path: /etc/rancher/k3s
@@ -33,6 +40,34 @@
     delay: 5
     timeout: 300
 
+# 2. Helm Installation
+- name: Add Helm apt key
+  apt_key:
+    url: https://baltocdn.com/helm/signing.asc
+    state: present
+  become: true
+
+- name: Add Helm repository
+  apt_repository:
+    repo: deb https://baltocdn.com/helm/stable/debian/ all main
+    state: present
+    filename: helm
+  become: true
+
+- name: Install Helm
+  apt:
+    name: helm
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Verify Helm installation
+  command: helm version
+  register: helm_version
+  changed_when: false
+  become: false
+
+# 3. Kubectl Configuration
 - name: Create .kube directory
   file:
     path: ~/.kube
@@ -48,8 +83,13 @@
     remote_src: yes
   become: false
 
+# 4. Testing and Additional Components
 - name: Test k3s installation
   command: kubectl get nodes
   register: kubectl_test
   changed_when: false
-  become: false 
+  become: false
+
+- name: Install EBS CSI Driver
+  include_tasks: ebs-csi.yml
+  when: ebs_csi_enabled

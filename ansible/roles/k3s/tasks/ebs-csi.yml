@@ -1,0 +1,67 @@
+# roles/k3s/tasks/ebs-csi.yml
+---
+- name: Fetch AWS Secrets
+  community.aws.aws_secret:
+    name: "book"
+    region: "eu-west-3"
+  register: secrets_result
+
+- name: Set variables from secrets
+  set_fact:
+    aws_account_id: "{{ secrets_result.value.aws_account_id }}"
+    aws_ebs_csi_role_name: "{{ secrets_result.value.aws_ebs_csi_role_name }}"
+    mysql_database: "{{ secrets_result.value.MYSQL_DATABASE }}"
+    mysql_user: "{{ secrets_result.value.MYSQL_USER }}"
+    mysql_password: "{{ secrets_result.value.MYSQL_PASSWORD }}"
+    mysql_root_password: "{{ secrets_result.value.MYSQL_ROOT_PASSWORD }}"
+    mysql_host: "{{ secrets_result.value.MYSQL_HOST }}"
+    mysql_port: "{{ secrets_result.value.MYSQL_PORT }}"
+
+
+- name: Add Helm repo for EBS CSI Driver
+  kubernetes.core.helm_repository:
+    name: aws-ebs-csi-driver
+    repo_url: https://kubernetes-sigs.github.io/aws-ebs-csi-driver
+  become: false
+  when: ebs_csi_enabled
+
+- name: Update Helm repos
+  ansible.builtin.command: helm repo update
+  become: false
+  when: ebs_csi_enabled
+  changed_when: true
+
+- name: Template EBS CSI values
+  ansible.builtin.template:
+    src: ebs-csi-values.yml.j2
+    dest: /tmp/ebs-csi-values.yml
+    mode: '0644'
+  when: ebs_csi_enabled
+
+- name: Create kube-system namespace
+  kubernetes.core.k8s:
+    name: kube-system
+    kind: Namespace
+    state: present
+  become: false
+  when: ebs_csi_enabled
+
+- name: Install EBS CSI Driver
+  kubernetes.core.helm:
+    name: aws-ebs-csi-driver
+    chart_ref: aws-ebs-csi-driver/aws-ebs-csi-driver
+    chart_version: "{{ ebs_csi_version }}"
+    release_namespace: kube-system
+    create_namespace: false
+    values_files: 
+      - /tmp/ebs-csi-values.yml
+    wait: true
+    timeout: 300s
+  become: false
+  when: ebs_csi_enabled
+
+- name: Clean up temporary values file
+  ansible.builtin.file:
+    path: /tmp/ebs-csi-values.yml
+    state: absent
+  when: ebs_csi_enabled
