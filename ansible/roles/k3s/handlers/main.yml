@@ -1,6 +1,11 @@
-# roles/k3s/handlers/main.yml
 ---
 - name: restart k3s
   service:
     name: k3s
     state: restarted
+
+- name: wait for k3s
+  wait_for:
+    path: "{{ kubeconfig }}"
+    delay: 10
+    timeout: 300

@@ -1,8 +1,9 @@
-# roles/k3s/defaults/main.yml
 ---
 k3s_version: "v1.28.4+k3s2"
 k3s_server_args: "--disable traefik --disable servicelb"
-ebs_csi_enabled: true  # Active par défaut
+ebs_csi_enabled: true
 ebs_csi_version: "2.26.0"
-storage_class_name: "ebs-sc"  # Pour référence dans le PVC
+storage_class_name: "ebs-sc"
 aws_region: "eu-west-3"
+wp_namespace: wordpress
+kubeconfig: /etc/rancher/k3s/k3s.yaml
