@@ -93,6 +93,17 @@ data "aws_eip" "wordpress_test" {
   id = "eipalloc-0933b219497dd6c15"
 }
 
+# Data source pour le rôle IAM existant
+data "aws_iam_role" "ec2_secrets_manager_role" {
+  name = "EC2SecretsManagerRole"
+}
+
+# IAM Instance Profile pour EC2
+resource "aws_iam_instance_profile" "ec2_secrets_manager_profile" {
+  name = "ec2-secrets-manager-profile"
+  role = data.aws_iam_role.ec2_secrets_manager_role.name
+}
+
 # EC2 Instance
 resource "aws_instance" "wordpress_test" {
   ami                         = "ami-06e02ae7bdac6b938"
@@ -101,6 +112,7 @@ resource "aws_instance" "wordpress_test" {
   vpc_security_group_ids      = [aws_security_group.wordpress_test.id]
   key_name                    = "test-aws-key-pair-new"
   associate_public_ip_address = true
+  iam_instance_profile        = aws_iam_instance_profile.ec2_secrets_manager_profile.name
 
   root_block_device {
     volume_size           = 8
@@ -120,7 +132,8 @@ resource "aws_instance" "wordpress_test" {
 
   depends_on = [
     module.network,
-    aws_security_group.wordpress_test
+    aws_security_group.wordpress_test,
+    aws_iam_instance_profile.ec2_secrets_manager_profile
   ]
 }
 

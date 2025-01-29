@@ -2,15 +2,27 @@
 - name: Configuration complète des serveurs WordPress
   hosts: wordpress
   become: true
+  
+  vars:
+    aws_region: eu-west-3
+    ebs_csi_enabled: false  # Désactivons temporairement
+  
   pre_tasks:
-    - name: Install Python 3 if not already installed
-      raw: |
-        sudo apt update && sudo apt install -y python3
+    - name: Get AWS secret
+      script: roles/common/files/get_secret.py
+      register: secret_output
+      delegate_to: localhost
+      become: false
       changed_when: false
+
+    - name: Set database secrets
+      set_fact:
+        db_secrets: "{{ secret_output.stdout | from_json }}"
+        cacheable: yes
+      no_log: true
+
   roles:
     - common
     - docker
     - k3s
     - wordpress
-  vars:
-    ansible_pkg_mgr: apt

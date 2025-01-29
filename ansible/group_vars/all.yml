@@ -4,6 +4,4 @@
 timezone: UTC
 environment: test
 aws_region: eu-west-3
-
-aws_account_id: "730335289383"
-aws_ebs_csi_role_name: "k3s-ebs-csi-role"
+ebs_csi_enabled: true

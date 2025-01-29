@@ -1,17 +1,40 @@
-# roles/common/common/main.yml
 ---
+# filepath: /home/gnou/Documents/wp-projet/wordpress-infra/ansible/roles/common/tasks/main.yml
+
 - block:
     - name: Update package cache
       apt:
         update_cache: yes
-      become: true
 
     - name: Install system packages
       apt:
         name:
           - python3
           - python3-pip
+          - python3-boto3
+          - python3-botocore
           - git
           - vim
         state: present
-      become: true
+  become: true
+
+# AWS creds directory first
+- name: Verify AWS credentials directory exists
+  file:
+    path: ~/.aws
+    state: directory
+    mode: '0700'
+
+# AWS credentials template separate
+- name: Configure AWS credentials
+  template:
+    src: aws_credentials.j2
+    dest: "/home/ubuntu/.aws/credentials"
+    mode: '0600'
+  vars:
+    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
+    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') | default('eu-west-3') }}"
+  become: true
+  when: aws_credentials_needed | default(true)
+#  no_log: true
