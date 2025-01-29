@@ -3,7 +3,7 @@
 wp_namespace: wordpress
 wp_domain: wordpress.example.com
 wp_replicas: 2
-storage_class_name: ebs-sc
+storage_class_name: local-path
 storage_size: 10Gi
 wp_memory_request: 256Mi
 wp_memory_limit: 512Mi
