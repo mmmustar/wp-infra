@@ -1,95 +1,86 @@
-# roles/k3s/tasks/main.yml
 ---
-#0 get secrets
-- name: Fetch and set AWS secrets
-  include_tasks: ebs-csi.yml
-  when: ebs_csi_enabled
-
-
-# 1. K3s Setup
-- name: Set permissions for k3s config
-  file:
-    path: /etc/rancher/k3s
-    mode: '0755'
-    state: directory
-  become: true
-
-- name: Set file permissions for k3s.yaml
-  file:
-    path: /etc/rancher/k3s/k3s.yaml
-    mode: '0644'
-  become: true
-
-- name: Download k3s installer
-  get_url:
-    url: https://get.k3s.io
-    dest: /tmp/k3s-installer
-    mode: '0755'
-
-- name: Install k3s
-  command:
-    cmd: /tmp/k3s-installer
-    creates: /usr/local/bin/k3s
-  environment:
-    INSTALL_K3S_VERSION: "{{ k3s_version }}"
-    INSTALL_K3S_EXEC: "{{ k3s_server_args }}"
-
-- name: Wait for k3s to be up
-  wait_for:
-    path: /etc/rancher/k3s/k3s.yaml
-    delay: 5
-    timeout: 300
-
-# 2. Helm Installation
-- name: Add Helm apt key
-  apt_key:
-    url: https://baltocdn.com/helm/signing.asc
-    state: present
-  become: true
-
-- name: Add Helm repository
-  apt_repository:
-    repo: deb https://baltocdn.com/helm/stable/debian/ all main
-    state: present
-    filename: helm
-  become: true
-
-- name: Install Helm
+- name: Update apt cache
   apt:
-    name: helm
-    state: present
     update_cache: yes
   become: true
 
-- name: Verify Helm installation
-  command: helm version
-  register: helm_version
-  changed_when: false
-  become: false
+- name: Install Python base packages
+  apt:
+    name: 
+      - python3-yaml
+      - python3-jsonpatch
+    state: present
+  become: true
 
-# 3. Kubectl Configuration
-- name: Create .kube directory
-  file:
-    path: ~/.kube
-    state: directory
-    mode: '0700'
-  become: false
+- name: Install kubernetes Python package
+  apt:
+    name: python3-kubernetes
+    state: present
+  become: true
 
-- name: Configure kubectl for the current user
-  copy:
-    src: /etc/rancher/k3s/k3s.yaml
-    dest: ~/.kube/config
-    mode: '0600'
-    remote_src: yes
-  become: false
+- name: Install NGINX Ingress Controller
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    src: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+  register: nginx_install
 
-# 4. Testing and Additional Components
-- name: Test k3s installation
-  command: kubectl get nodes
-  register: kubectl_test
-  changed_when: false
-  become: false
+- name: Wait for Ingress Controller to be ready
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    kind: Pod
+    namespace: ingress-nginx
+    label_selectors:
+      - app.kubernetes.io/component=controller
+  register: ingress_pods
+  until: ingress_pods.resources | length > 0 and ingress_pods.resources[0].status.phase == "Running"
+  retries: 30
+  delay: 20  # Augmenté le délai entre les tentatives
+  ignore_errors: true
 
-- name: Install EBS CSI Driver
-  include_tasks: ebs-csi.yml
-  when: ebs_csi_enabled
+- name: Check Ingress Controller logs if deployment failed
+  command: kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
+  register: ingress_logs
+  when: ingress_pods.failed is defined
+  ignore_errors: true
+
+- name: Create WordPress namespace
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ wp_namespace }}"
+
+- name: Create WordPress resources
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: "{{ item }}"
+    namespace: "{{ wp_namespace }}"
+  loop:
+    - storage.yaml.j2
+    - configmap.yaml.j2
+    - secret.yaml.j2
+    - deployment.yaml.j2
+    - service.yaml.j2
+
+- name: Apply Ingress
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: ingress.yaml.j2
+    namespace: "{{ wp_namespace }}"
+
+- name: Wait for WordPress deployment
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    kind: Deployment
+    name: wordpress
+    namespace: "{{ wp_namespace }}"
+  register: wp_deployment
+  until: wp_deployment.resources[0].status.availableReplicas is defined and wp_deployment.resources[0].status.availableReplicas > 0
+  retries: 30
+  delay: 10

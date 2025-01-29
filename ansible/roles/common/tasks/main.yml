@@ -1,10 +1,21 @@
 ---
-# filepath: /home/gnou/Documents/wp-projet/wordpress-infra/ansible/roles/common/tasks/main.yml
-
 - block:
+    - name: Force kill any apt/dpkg processes
+      shell: |
+        killall apt apt-get dpkg 2>/dev/null || true
+        rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
+        dpkg --configure -a
+      changed_when: false
+      ignore_errors: true
+
     - name: Update package cache
       apt:
         update_cache: yes
+        cache_valid_time: 3600
+      register: apt_update
+      retries: 3
+      delay: 5
+      until: apt_update is success
 
     - name: Install system packages
       apt:
@@ -17,24 +28,3 @@
           - vim
         state: present
   become: true
-
-# AWS creds directory first
-- name: Verify AWS credentials directory exists
-  file:
-    path: ~/.aws
-    state: directory
-    mode: '0700'
-
-# AWS credentials template separate
-- name: Configure AWS credentials
-  template:
-    src: aws_credentials.j2
-    dest: "/home/ubuntu/.aws/credentials"
-    mode: '0600'
-  vars:
-    aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') }}"
-    aws_secret_key: "{{ lookup('env', 'AWS_SECRET_ACCESS_KEY') }}"
-    aws_region: "{{ lookup('env', 'AWS_REGION') | default('eu-west-3') }}"
-  become: true
-  when: aws_credentials_needed | default(true)
-#  no_log: true

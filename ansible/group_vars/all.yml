@@ -5,3 +5,5 @@ timezone: UTC
 environment: test
 aws_region: eu-west-3
 ebs_csi_enabled: true
+cloud_provider: aws
+k8s_storage_class: ebs-sc

@@ -5,7 +5,7 @@
   
   vars:
     aws_region: eu-west-3
-    ebs_csi_enabled: false  # Désactivons temporairement
+    ebs_csi_enabled: true
   
   pre_tasks:
     - name: Get AWS secret

@@ -1,4 +1,3 @@
-# roles/k3s/tasks/ebs-csi.yml
 ---
 - name: Fetch AWS Secrets
   command: "aws secretsmanager get-secret-value --secret-id book --region eu-west-3 --output json"
@@ -12,10 +11,15 @@
     aws_account_id: "{{ (secrets_result.stdout | from_json).SecretString | from_json | json_query('aws_account_id') }}"
     aws_ebs_csi_role_name: "{{ (secrets_result.stdout | from_json).SecretString | from_json | json_query('aws_ebs_csi_role_name') }}"
 
+- name: Check if EBS CSI Driver is already installed
+  command: helm list -n kube-system
+  register: helm_list
+  changed_when: false
+
 - name: Delete old StorageClass if exists
   command: kubectl delete storageclass ebs-sc
   ignore_errors: true
-  when: ebs_csi_enabled
+  when: ebs_csi_enabled and "aws-ebs-csi-driver" not in helm_list.stdout
 
 - name: Add Helm repo for EBS CSI Driver
   command: helm repo add aws-ebs-csi-driver https://kubernetes-sigs.github.io/aws-ebs-csi-driver
@@ -30,7 +34,7 @@
   changed_when: true
 
 - name: Template EBS CSI values
-  ansible.builtin.template:
+  template:
     src: ebs-csi-values.yml.j2
     dest: /tmp/ebs-csi-values.yml
     mode: '0644'
@@ -42,11 +46,7 @@
     --namespace kube-system 
     --version {{ ebs_csi_version }}
     -f /tmp/ebs-csi-values.yml
-  become: false
-  when: ebs_csi_enabled
-  register: helm_result
-  ignore_errors: true
-  changed_when: "'already exists' not in helm_result.stderr|default('')"
+  when: ebs_csi_enabled and "aws-ebs-csi-driver" not in helm_list.stdout
 
 - name: Upgrade EBS CSI Driver if already installed
   command: >
@@ -54,11 +54,10 @@
     --namespace kube-system 
     --version {{ ebs_csi_version }}
     -f /tmp/ebs-csi-values.yml
-  become: false
-  when: ebs_csi_enabled and helm_result.rc != 0 and "already exists" in helm_result.stderr|default('')
+  when: ebs_csi_enabled and "aws-ebs-csi-driver" in helm_list.stdout
 
 - name: Clean up temporary values file
-  ansible.builtin.file:
+  file:
     path: /tmp/ebs-csi-values.yml
     state: absent
   when: ebs_csi_enabled

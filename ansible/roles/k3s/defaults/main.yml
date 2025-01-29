@@ -4,3 +4,5 @@ k3s_version: "v1.28.4+k3s2"
 k3s_server_args: "--disable traefik --disable servicelb"
 ebs_csi_enabled: true  # Active par défaut
 ebs_csi_version: "2.26.0"
+storage_class_name: "ebs-sc"  # Pour référence dans le PVC
+aws_region: "eu-west-3"

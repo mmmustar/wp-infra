@@ -1,5 +1,5 @@
 controller:
-  region: eu-west-3
+  region: "{{ aws_region }}"
   serviceAccount:
     create: true
     name: ebs-csi-controller-sa
@@ -14,10 +14,10 @@ node:
 
 storageClasses:
 - name: ebs-sc
-  provisioner: ebs.csi.aws.com
+  provisioner: ebs.csi.aws.com  # Changement ici
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-  volumeBindingMode: WaitForFirstConsumer
+  volumeBindingMode: WaitForFirstConsumer  # Changement ici
   allowVolumeExpansion: true
   reclaimPolicy: Delete
   parameters:
