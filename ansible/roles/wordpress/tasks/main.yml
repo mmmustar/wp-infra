@@ -50,6 +50,12 @@
       metadata:
         name: "{{ wp_namespace }}"
 
+- name: Include TLS configuration tasks
+  include_tasks: tls.yml
+  tags: 
+    - wordpress
+    - tls
+
 - name: Create WordPress resources
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"

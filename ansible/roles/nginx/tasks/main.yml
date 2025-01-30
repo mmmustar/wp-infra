@@ -1,0 +1,44 @@
+---
+- name: Force kill apt/dpkg processes
+  shell: |
+    killall apt apt-get dpkg 2>/dev/null || true
+    rm -f /var/lib/apt/lists/lock /var/cache/apt/archives/lock /var/lib/dpkg/lock* 2>/dev/null || true
+    dpkg --configure -a
+  changed_when: false
+  ignore_errors: true
+  become: true
+
+- name: Update package cache
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  register: apt_update
+  retries: 3
+  delay: 5
+  until: apt_update is success
+  become: true
+
+- name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+  become: true
+  register: nginx_install
+  retries: 3
+  delay: 5
+  until: nginx_install is success
+
+- name: Copy nginx SSL configuration
+  template:
+    src: nginx-ssl-certificate.yaml.j2
+    dest: /etc/nginx/sites-available/default
+  notify: Reload Nginx
+  become: true
+
+- name: Enable nginx site
+  file:
+    src: /etc/nginx/sites-available/default
+    dest: /etc/nginx/sites-enabled/default
+    state: link
+  notify: Reload Nginx
+  become: true

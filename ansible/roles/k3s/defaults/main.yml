@@ -7,3 +7,4 @@ storage_class_name: "ebs-sc"
 aws_region: "eu-west-3"
 wp_namespace: wordpress
 kubeconfig: /etc/rancher/k3s/k3s.yaml
+security_group_id: "sg-0e2ab25ac27f8bbc5"

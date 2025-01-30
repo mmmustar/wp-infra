@@ -1,8 +1,8 @@
 # roles/wordpress/defaults/main.yml
 ---
 wp_namespace: wordpress
-wp_domain: wordpress.example.com
-wp_replicas: 2
+wp_domain: test.mmustar.fr
+wp_replicas: 1
 storage_class_name: local-path
 storage_size: 10Gi
 wp_memory_request: 256Mi

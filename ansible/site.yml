@@ -1,13 +1,12 @@
-# site.yml
+# ansible/site.yml
 ---
 - name: Configuration complète des serveurs WordPress
   hosts: wordpress
   become: true
-
   vars:
     aws_region: eu-west-3
     ebs_csi_enabled: true
-
+    nginx_server_name: test.mmustar.fr
   pre_tasks:
     - name: Get AWS secret
       block:
@@ -23,6 +22,10 @@
     - name: Set database secrets
       set_fact:
         db_secrets: "{{ secret_output.stdout | from_json }}"
+      no_log: true
+
+    - name: Set database variables  
+      set_fact:
         db_host: "{{ db_secrets.MYSQL_HOST }}"
         db_name: "{{ db_secrets.MYSQL_DATABASE }}"
         db_user: "{{ db_secrets.MYSQL_USER }}"
@@ -34,3 +37,4 @@
     - { role: docker, tags: ['docker'] }
     - { role: k3s, tags: ['k3s'] }
     - { role: wordpress, tags: ['wordpress'] }
+    - { role: nginx, tags: ['nginx'] }

@@ -1,0 +1,20 @@
+# ansible/roles/nginx/tasks/ssl.yml
+---
+- name: Create SSL directory
+  file:
+    path: /etc/nginx/ssl
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Generate SSL private key
+  command: openssl genpkey -algorithm RSA -out /etc/nginx/ssl/nginx-selfsigned.key -pkeyopt rsa_keygen_bits:2048
+  args:
+    creates: /etc/nginx/ssl/nginx-selfsigned.key
+  become: true
+
+- name: Generate SSL certificate
+  command: openssl req -new -x509 -key /etc/nginx/ssl/nginx-selfsigned.key -out /etc/nginx/ssl/nginx-selfsigned.crt -days 365 -subj "/CN={{ nginx_server_name }}"
+  args:
+    creates: /etc/nginx/ssl/nginx-selfsigned.crt
+  become: true
