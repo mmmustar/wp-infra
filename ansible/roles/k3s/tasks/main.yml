@@ -1,5 +1,6 @@
 # roles/k3s/tasks/main.yml
 ---
+# Étape 1: Configuration initiale
 - name: Get subnet IDs from AWS
   shell: >
     aws ec2 describe-subnets
@@ -17,6 +18,7 @@
     public_subnet_id: "{{ subnet_info.stdout }}"
   when: subnet_info.stdout != ""
 
+# Étape 2: Installation de K3s
 - name: Download k3s installation script
   get_url:
     url: https://get.k3s.io
@@ -52,6 +54,7 @@
     state: present
   become: true
 
+# Étape 3: Vérification de l'installation
 - name: Wait for k3s node to be ready
   shell: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes
   register: node_status
@@ -60,6 +63,7 @@
   delay: 10
   become: true
 
+# Étape 4: Configuration du Security Group
 - name: Add NodePort range to security group
   shell: >
     aws ec2 authorize-security-group-ingress 
@@ -76,17 +80,17 @@
     - '"InvalidPermission.Duplicate" not in sg_result.stderr'
   changed_when: sg_result.rc == 0
 
-# Installation de Helm
+# Étape 5: Installation de Helm
 - name: Include Helm installation tasks
-  ansible.builtin.include_tasks: helm.yml
+  include_tasks: helm.yml
 
-# Installation de NGINX Ingress
+# Étape 6: Installation de NGINX Ingress
 - name: Add ingress-nginx repository
   command: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   changed_when: true
-  failed_when: false
+  ignore_errors: true
 
 - name: Update Helm repos
   command: helm repo update
@@ -94,30 +98,49 @@
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   changed_when: true
 
-- name: Install ingress-nginx
-  command: >
-    helm install ingress-nginx ingress-nginx/ingress-nginx 
-    --namespace ingress-nginx 
-    --create-namespace 
-    --set controller.service.type=NodePort 
-    --set controller.service.nodePorts.http=30080 
-    --set controller.service.nodePorts.https=30443
-  environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-  register: nginx_install
-  failed_when: false
+- name: Install ingress-nginx with Helm
+  kubernetes.core.helm:
+    name: ingress-nginx
+    chart_ref: ingress-nginx/ingress-nginx
+    release_namespace: ingress-nginx
+    create_namespace: true
+    release_values:
+      controller:
+        service:
+          type: NodePort
+        kind: DaemonSet
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+  register: nginx_helm_result
 
-- name: Wait for ingress-nginx deployment
+- name: Wait for ingress-nginx pods to be Running
   shell: >
-    kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get deployment 
-    ingress-nginx-controller -n ingress-nginx
-  register: nginx_deployment
-  until: "'1/1' in nginx_deployment.stdout"
+    kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller --no-headers
+  register: nginx_pod_status
+  until: nginx_pod_status.rc == 0 and 'Running' in nginx_pod_status.stdout
   retries: 30
   delay: 10
-  ignore_errors: true
 
-# Installation du EBS CSI Driver
+- name: Display ingress-nginx pod logs if not running
+  shell: kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
+  register: nginx_logs
+  when: "'Running' not in nginx_pod_status.stdout"
+
+- name: Show pod logs
+  debug:
+    var: nginx_logs.stdout_lines
+  when: nginx_logs is defined
+
+# Étape 7: Installation du EBS CSI Driver
 - name: Include EBS CSI tasks
   include_tasks: ebs-csi.yml
   when: ebs_csi_enabled
+
+# Étape 8: Vérification finale
+- name: Verify cluster status
+  command: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes,pods --all-namespaces
+  register: cluster_status
+  changed_when: false
+
+- name: Show cluster status
+  debug:
+    var: cluster_status.stdout_lines
