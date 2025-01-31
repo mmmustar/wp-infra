@@ -3,10 +3,16 @@
 wp_namespace: wordpress
 wp_domain: test.mmustar.fr
 wp_replicas: 1
-storage_class_name: local-path
+storage_class_name: ebs-sc
 storage_size: 10Gi
 wp_memory_request: 256Mi
 wp_memory_limit: 512Mi
 wp_cpu_request: 250m
 wp_cpu_limit: 500m
 kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+# Default database variables (seront surchargées par les secrets)
+db_host: "{{ db_secrets.MYSQL_HOST | default('localhost') }}"
+db_name: "{{ db_secrets.MYSQL_DATABASE | default('wordpress') }}"
+db_user: "{{ db_secrets.MYSQL_USER | default('wordpress') }}"
+db_password: "{{ db_secrets.MYSQL_PASSWORD | default('change_me') }}"

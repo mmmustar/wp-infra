@@ -1,11 +1,27 @@
-# roles/wordpress/tasks/main.yml
 ---
+- name: Ensure kubeconfig directory exists
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    mode: '0755'
+
+- name: Copy kubeconfig locally
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    mode: '0600'
+    remote_src: yes
+
+- name: Set KUBECONFIG environment variable
+  set_fact:
+    kubeconfig: "{{ ansible_env.HOME }}/.kube/config"
+
 - name: Update apt cache
   apt:
     update_cache: yes
   become: true
 
-- name: Install Python base packages
+- name: Install required packages
   apt:
     name: 
       - python3-yaml
@@ -13,32 +29,6 @@
       - python3-kubernetes
     state: present
   become: true
-
-- name: Install NGINX Ingress Controller
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
-    state: present
-    src: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
-  register: nginx_install
-
-- name: Wait for Ingress Controller to be ready
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ kubeconfig }}"
-    kind: Pod
-    namespace: ingress-nginx
-    label_selectors:
-      - app.kubernetes.io/component=controller
-  register: ingress_pods
-  until: ingress_pods.resources | length > 0 and ingress_pods.resources[0].status.phase == "Running"
-  retries: 30
-  delay: 20
-  ignore_errors: true
-
-- name: Check Ingress Controller logs if deployment failed
-  command: kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
-  register: ingress_logs
-  when: ingress_pods.failed is defined
-  ignore_errors: true
 
 - name: Create WordPress namespace
   kubernetes.core.k8s:
@@ -50,11 +40,24 @@
       metadata:
         name: "{{ wp_namespace }}"
 
+- name: Include secrets tasks
+  include_tasks: secrets.yml
+
 - name: Include TLS configuration tasks
   include_tasks: tls.yml
   tags: 
     - wordpress
     - tls
+
+- name: Delete existing PVC if exists
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: absent
+    api_version: v1
+    kind: PersistentVolumeClaim
+    namespace: "{{ wp_namespace }}"
+    name: wp-pvc
+  ignore_errors: true
 
 - name: Create WordPress resources
   kubernetes.core.k8s:
@@ -69,12 +72,11 @@
     - deployment.yaml.j2
     - service.yaml.j2
 
-- name: Apply Ingress
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
-    state: present
-    template: ingress.yaml.j2
-    namespace: "{{ wp_namespace }}"
+- name: Include Ingress tasks
+  include_tasks: ingress.yml
+  tags:
+    - wordpress
+    - ingress
 
 - name: Wait for WordPress deployment
   kubernetes.core.k8s_info:
@@ -87,13 +89,6 @@
   retries: 30
   delay: 10
 
-- name: Verify Ingress status
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ kubeconfig }}"
-    kind: Ingress
-    name: wordpress-ingress
-    namespace: "{{ wp_namespace }}"
-  register: ingress_status
-  until: ingress_status.resources[0].status.loadBalancer is defined
-  retries: 30
-  delay: 10
+- name: Display WordPress deployment status
+  debug:
+    var: wp_deployment.resources[0].status

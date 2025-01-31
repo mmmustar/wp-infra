@@ -1,49 +1,84 @@
-# roles/nginx/tasks/main.yml
 ---
-# Ajoutez ces tâches avant le reload
-- name: Check nginx configuration
+# Installation de Nginx
+- name: Install Nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+  become: true
+
+# Installation de Certbot et du plugin DNS Cloudflare
+- name: Install Certbot and Cloudflare DNS plugin
+  apt:
+    name:
+      - certbot
+      - python3-certbot-dns-cloudflare
+      - python3-pip
+      - python3-cloudflare
+    state: present
+    update_cache: yes
+  become: true
+
+# Création du fichier de configuration Cloudflare
+- name: Create Cloudflare configuration file
+  copy:
+    dest: /etc/letsencrypt/cloudflare.ini
+    content: |
+      dns_cloudflare_api_token = Qfid8ssb_vHeD1YwG_hD4jn7H5xJvUg4W_qQtcGf
+    mode: '0600'
+    owner: root
+    group: root
+  become: true
+
+# Génération du certificat SSL avec Certbot
+- name: Generate SSL certificate with Certbot
+  command: >
+    certbot certonly --dns-cloudflare 
+    --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
+    -d {{ domain_name }}
+    --non-interactive 
+    --agree-tos 
+    --email {{ cert_email }}
+  become: true
+  when: domain_name is defined and cert_email is defined
+
+# Configuration Nginx pour WordPress
+- name: Create wordpress.conf
+  template:
+    src: wordpress.conf.j2
+    dest: /etc/nginx/sites-available/wordpress.conf
+    mode: '0644'
+  become: true
+  notify: Reload Nginx
+
+- name: Enable wordpress site
+  file:
+    src: /etc/nginx/sites-available/wordpress.conf
+    dest: /etc/nginx/sites-enabled/wordpress.conf
+    state: link
+  become: true
+  notify: Reload Nginx
+
+- name: Remove default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  become: true
+  notify: Reload Nginx
+
+- name: Ensure Nginx is started and enabled
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+  become: true
+
+- name: Verify nginx configuration
   command: nginx -t
   register: nginx_config_test
   changed_when: false
-  ignore_errors: true
+  become: true
 
 - name: Display nginx configuration test results
   debug:
     var: nginx_config_test
-
-- name: Get nginx status
-  command: systemctl status nginx
-  register: nginx_status
-  changed_when: false
-  ignore_errors: true
-
-- name: Display nginx status
-  debug:
-    var: nginx_status
-
-- name: Check nginx logs
-  command: journalctl -xeu nginx.service --no-pager
-  register: nginx_logs
-  changed_when: false
-  ignore_errors: true
-
-- name: Display nginx logs
-  debug:
-    var: nginx_logs
-
-# Modifiez le handler reload pour inclure plus d'informations
-- name: Reload Nginx
-  block:
-    - name: Try reload nginx
-      service:
-        name: nginx
-        state: reloaded
-  rescue:
-    - name: Get detailed error information
-      command: systemctl status nginx
-      register: nginx_error_status
-      ignore_errors: true
-
-    - name: Display error information
-      debug:
-        var: nginx_error_status

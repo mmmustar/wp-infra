@@ -1,5 +1,3 @@
-# ansible/site.yml
----
 - name: Configuration complète des serveurs WordPress
   hosts: wordpress
   become: true
@@ -7,7 +5,19 @@
     aws_region: eu-west-3
     ebs_csi_enabled: true
     nginx_server_name: test.mmustar.fr
+    domain_name: test.mmustar.fr
+    cert_email: mmustar@free.fr
+    wp_namespace: wordpress
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+
   pre_tasks:
+    - name: Installer net-tools
+      apt:
+        name: net-tools
+        state: present
+      tags:
+        - net-tools
+
     - name: Get AWS secret
       block:
         - script: roles/common/files/get_secret.py
@@ -23,14 +33,12 @@
       set_fact:
         db_secrets: "{{ secret_output.stdout | from_json }}"
       no_log: true
+      when: secret_output is defined
 
-    - name: Set database variables  
-      set_fact:
-        db_host: "{{ db_secrets.MYSQL_HOST }}"
-        db_name: "{{ db_secrets.MYSQL_DATABASE }}"
-        db_user: "{{ db_secrets.MYSQL_USER }}"
-        db_password: "{{ db_secrets.MYSQL_PASSWORD }}"
-      no_log: true
+    - name: Debug db_secrets
+      debug:
+        msg: "DB Secrets loaded: {{ db_secrets is defined }}"
+      when: secret_output is defined
 
   roles:
     - { role: common, tags: ['common'] }
