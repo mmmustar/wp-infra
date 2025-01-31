@@ -24,6 +24,20 @@ variable "environment" {
   type        = string
 }
 
+# Define the VPC
+resource "aws_vpc" "main" {
+  cidr_block = "10.0.0.0/16"
+
+  tags = {
+    Name = "main-vpc"
+  }
+}
+
+# Define the availability zones data source
+data "aws_availability_zones" "available" {
+  state = "available"
+}
+
 # Modules
 module "network" {
   source              = "../modules/network"
@@ -107,7 +121,7 @@ resource "aws_iam_instance_profile" "ec2_secrets_manager_profile" {
 # EC2 Instance
 resource "aws_instance" "wordpress_test" {
   ami                         = "ami-06e02ae7bdac6b938"
-  instance_type               = "t2.micro"
+  instance_type               = "t3.medium"
   subnet_id                   = module.network.public_subnet_ids[0]
   vpc_security_group_ids      = [aws_security_group.wordpress_test.id]
   key_name                    = "test-aws-key-pair-new"
@@ -149,6 +163,7 @@ data "aws_security_group" "rds" {
   id = "sg-00efe258e85b22a30"
 }
 
+# Define the RDS instance data source
 data "aws_db_instance" "wordpress" {
   db_instance_identifier = "wordpress-db"
 }
@@ -172,4 +187,8 @@ output "eip_public_ip" {
 
 output "ebs_csi_role_arn" {
   value = module.k3s.ebs_csi_role_arn
+}
+
+output "public_subnet_ids" {
+  value = module.network.public_subnet_ids
 }

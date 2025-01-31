@@ -1,10 +1,10 @@
+# roles/k3s/templates/ebs-csi-values.yml.j2
 controller:
   region: "{{ aws_region }}"
   serviceAccount:
     create: true
     name: ebs-csi-controller-sa
     annotations:
-      # Pour EC2 et non EKS
       eks.amazonaws.com/role-arn: null
       
 node:
@@ -14,10 +14,10 @@ node:
 
 storageClasses:
 - name: ebs-sc
-  provisioner: ebs.csi.aws.com  # Changement ici
+  provisioner: ebs.csi.aws.com
   annotations:
     storageclass.kubernetes.io/is-default-class: "true"
-  volumeBindingMode: WaitForFirstConsumer  # Changement ici
+  volumeBindingMode: WaitForFirstConsumer
   allowVolumeExpansion: true
   reclaimPolicy: Delete
   parameters:

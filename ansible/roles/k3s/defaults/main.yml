@@ -1,3 +1,4 @@
+# roles/k3s/defaults/main.yml
 ---
 k3s_version: "v1.28.4+k3s2"
 k3s_server_args: "--disable traefik --disable servicelb"
@@ -8,3 +9,5 @@ aws_region: "eu-west-3"
 wp_namespace: wordpress
 kubeconfig: /etc/rancher/k3s/k3s.yaml
 security_group_id: "sg-0e2ab25ac27f8bbc5"
+project_name: "wordpress-mmustar"
+environment: "test"

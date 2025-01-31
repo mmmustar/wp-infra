@@ -1,79 +1,64 @@
+# roles/k3s/tasks/main.yml
 ---
-- name: Run Terraform to get Public Subnet IDs
-  shell: terraform -chdir=environments/test output -json public_subnet_ids
-  register: terraform_output
+- name: Get subnet IDs from AWS
+  shell: >
+    aws ec2 describe-subnets
+    --region {{ aws_region }}
+    --filters "Name=tag:Project,Values={{ project_name }}" "Name=tag:Environment,Values={{ environment }}"
+    --query "Subnets[0].SubnetId"
+    --output text
+  register: subnet_info
   delegate_to: localhost
-  changed_when: false
   become: false
+  changed_when: false
 
-- name: Parse the first subnet from Terraform output
+- name: Set subnet ID
   set_fact:
-    public_subnet_id: "{{ (terraform_output.stdout | from_json)[0] }}"
-  when: terraform_output.stdout != ""
+    public_subnet_id: "{{ subnet_info.stdout }}"
+  when: subnet_info.stdout != ""
 
-- name: Download k3s
+- name: Download k3s installation script
   get_url:
     url: https://get.k3s.io
     dest: /tmp/k3s-install.sh
     mode: '0755'
 
 - name: Install k3s
-  shell: INSTALL_K3S_VERSION={{ k3s_version }} /tmp/k3s-install.sh --write-kubeconfig-mode 644 {{ k3s_server_args }}
+  shell: 
+    cmd: INSTALL_K3S_VERSION={{ k3s_version }} /tmp/k3s-install.sh --write-kubeconfig-mode 644 {{ k3s_server_args }}
   args:
     creates: /usr/local/bin/k3s
   environment:
     INSTALL_K3S_EXEC: "{{ k3s_server_args }}"
+  register: k3s_install
 
-- name: Wait for k3s to be ready
-  wait_for:
-    path: "{{ kubeconfig }}"
-    delay: 10
-    timeout: 300
+- name: Wait for k3s service to start
+  systemd:
+    name: k3s
+    state: started
+    enabled: yes
+  register: k3s_service
+
+- name: Configure kubeconfig permissions
+  file:
+    path: /etc/rancher/k3s/k3s.yaml
+    mode: '0644'
+  become: true
+
+- name: Set KUBECONFIG environment variable
+  lineinfile:
+    path: /home/{{ ansible_user }}/.bashrc
+    line: "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
+    state: present
+  become: true
 
 - name: Wait for k3s node to be ready
-  kubernetes.core.k8s_info:
-    kind: Node
-    name: "{{ ansible_hostname }}"
-    kubeconfig: "{{ kubeconfig }}"
+  shell: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes
   register: node_status
-  until: node_status.resources is defined and 
-         node_status.resources | length > 0 and 
-         node_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
+  until: "'Ready' in node_status.stdout"
   retries: 30
   delay: 10
-
-- name: Wait for k3s node to be ready
-  kubernetes.core.k8s_info:
-    kind: Node
-    name: "{{ ansible_hostname }}"
-    kubeconfig: "{{ kubeconfig }}"
-  register: node_status
-  until: node_status.resources is defined and 
-         node_status.resources | length > 0 and 
-         node_status.resources[0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length > 0
-  retries: 30
-  delay: 10
-
-- name: Add NodePort range and health check to security group
-  shell: |
-    aws ec2 authorize-security-group-ingress \
-      --region {{ aws_region }} \
-      --group-id {{ security_group_id }} \
-      --ip-permissions '[
-        {
-          "IpProtocol": "tcp",
-          "FromPort": 31097,
-          "ToPort": 31097,
-          "IpRanges": [{"CidrIp": "0.0.0.0/0"}]
-        }
-      ]'
-  delegate_to: localhost
-  become: false
-  register: sg_result
-  failed_when: 
-    - sg_result.rc != 0 
-    - '"InvalidPermission.Duplicate" not in sg_result.stderr'
-  changed_when: sg_result.rc == 0
+  become: true
 
 - name: Add NodePort range to security group
   shell: >
@@ -91,76 +76,48 @@
     - '"InvalidPermission.Duplicate" not in sg_result.stderr'
   changed_when: sg_result.rc == 0
 
-- name: Install NGINX Ingress Controller
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
-    state: present
-    src: https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.2/deploy/static/provider/cloud/deploy.yaml
+# Installation de Helm
+- name: Include Helm installation tasks
+  ansible.builtin.include_tasks: helm.yml
 
-- name: Wait for Ingress Controller deployment
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ kubeconfig }}"
-    kind: Deployment
-    name: ingress-nginx-controller
-    namespace: ingress-nginx
-  register: ingress_deployment
-  until: ingress_deployment.resources[0].status.availableReplicas is defined and ingress_deployment.resources[0].status.availableReplicas > 0
-  retries: 30
-  delay: 10
+# Installation de NGINX Ingress
+- name: Add ingress-nginx repository
+  command: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: true
+  failed_when: false
 
-- name: Get Public Subnet ID for LoadBalancer
+- name: Update Helm repos
+  command: helm repo update
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  changed_when: true
+
+- name: Install ingress-nginx
   command: >
-    aws ec2 describe-subnets --filters "Name=tag:Name,Values=your-subnet-name"
-    --query "Subnets[0].SubnetId" --output text --region eu-west-3
-  register: public_subnet_result
-  delegate_to: localhost
-  changed_when: false
+    helm install ingress-nginx ingress-nginx/ingress-nginx 
+    --namespace ingress-nginx 
+    --create-namespace 
+    --set controller.service.type=NodePort 
+    --set controller.service.nodePorts.http=30080 
+    --set controller.service.nodePorts.https=30443
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  register: nginx_install
+  failed_when: false
 
-- name: Set public subnet ID as fact
-  set_fact:
-    public_subnet_id: "{{ public_subnet_result.stdout }}"
-  when: public_subnet_result.stdout != ""
-
-- name: Configure Ingress LoadBalancer
-  kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
-    state: present
-    definition:
-      apiVersion: v1
-      kind: Service
-      metadata:
-        name: ingress-nginx-controller
-        namespace: ingress-nginx
-        annotations:
-          service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-          service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
-          service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
-          service.beta.kubernetes.io/aws-load-balancer-subnets: "{{ public_subnet_id }}"
-          service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules: "true"
-      spec:
-        type: LoadBalancer
-        externalTrafficPolicy: Local
-        ports:
-        - name: http
-          port: 80
-          protocol: TCP
-          targetPort: 80
-        - name: https
-          port: 443
-          protocol: TCP
-          targetPort: 443
-        selector:
-          app.kubernetes.io/component: controller
-          app.kubernetes.io/instance: ingress-nginx
-          app.kubernetes.io/name: ingress-nginx
-
-- name: Wait for LoadBalancer external IP
-  kubernetes.core.k8s_info:
-    kubeconfig: "{{ kubeconfig }}"
-    kind: Service
-    name: ingress-nginx-controller
-    namespace: ingress-nginx
-  register: lb_service
-  until: lb_service.resources[0].status.loadBalancer.ingress is defined
+- name: Wait for ingress-nginx deployment
+  shell: >
+    kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get deployment 
+    ingress-nginx-controller -n ingress-nginx
+  register: nginx_deployment
+  until: "'1/1' in nginx_deployment.stdout"
   retries: 30
   delay: 10
+  ignore_errors: true
+
+# Installation du EBS CSI Driver
+- name: Include EBS CSI tasks
+  include_tasks: ebs-csi.yml
+  when: ebs_csi_enabled
