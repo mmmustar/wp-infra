@@ -33,14 +33,18 @@
 # Génération du certificat SSL avec Certbot
 - name: Generate SSL certificate with Certbot
   command: >
-    certbot certonly --dns-cloudflare 
+    certbot certonly --dns-cloudflare
     --dns-cloudflare-credentials /etc/letsencrypt/cloudflare.ini
-    -d {{ domain_name }}
-    --non-interactive 
-    --agree-tos 
-    --email {{ cert_email }}
+    -d {{ domain_name }} -d www.{{ domain_name }}
+    --non-interactive --agree-tos --email {{ cert_email }}
+    --expand
   become: true
-  when: domain_name is defined and cert_email is defined
+
+- name: Reload Nginx after SSL setup
+  service:
+    name: nginx
+    state: reloaded
+  become: true
 
 # Configuration Nginx pour WordPress
 - name: Create wordpress.conf
