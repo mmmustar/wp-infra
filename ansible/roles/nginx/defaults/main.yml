@@ -1,2 +1,3 @@
 domain_name: "test.mmustar.fr"
 cert_email: "mmustar@free.fr"
+ingress_http_nodeport: 32569

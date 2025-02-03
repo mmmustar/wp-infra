@@ -14,7 +14,7 @@
 - name: Apply WordPress Ingress
   kubernetes.core.k8s:
     state: present
-    template: ingress.yaml.j2
+    definition: "{{ lookup('template', '../templates/ingress.yaml.j2') | from_yaml }}"
     namespace: "{{ wp_namespace }}"
   register: ingress_result
 

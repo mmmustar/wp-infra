@@ -108,6 +108,9 @@
       controller:
         service:
           type: NodePort
+          nodePorts:
+            http: 32569
+            https: 32570
         kind: DaemonSet
     kubeconfig: /etc/rancher/k3s/k3s.yaml
   register: nginx_helm_result

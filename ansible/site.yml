@@ -6,7 +6,6 @@
     ebs_csi_enabled: true
     nginx_server_name: test.mmustar.fr
     domain_name: test.mmustar.fr
-    cert_email: mmustar@free.fr
     wp_namespace: wordpress
     kubeconfig: /etc/rancher/k3s/k3s.yaml
 

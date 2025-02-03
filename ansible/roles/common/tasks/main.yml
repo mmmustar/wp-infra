@@ -61,22 +61,3 @@
   retries: 3  
   delay: 10  
   until: pkg_install is success
-
-# Nouvelle section pour installer Certbot et le plugin DNS Cloudflare  
-- name: Installer Certbot et le plugin DNS Cloudflare  
-  apt:
-    name:
-      - certbot  
-      - python3-certbot-dns-cloudflare  
-    state: present  
-  become: true
-
-# Nouvelle tâche pour créer le fichier de configuration Cloudflare  
-- name: Créer le fichier de configuration Cloudflare  
-  copy:
-    dest: /etc/letsencrypt/cloudflare.ini  
-    content: |
-      dns_cloudflare_email = your-email@example.com  
-      dns_cloudflare_api_key = your-cloudflare-api-key  
-    mode: '0600'
-  become: true
