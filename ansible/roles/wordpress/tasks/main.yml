@@ -1,3 +1,4 @@
+# wordpress-main.yml
 ---
 - name: Ensure kubeconfig directory exists
   file:
@@ -16,20 +17,6 @@
   set_fact:
     kubeconfig: "{{ ansible_env.HOME }}/.kube/config"
 
-- name: Update apt cache
-  apt:
-    update_cache: yes
-  become: true
-
-- name: Install required packages
-  apt:
-    name: 
-      - python3-yaml
-      - python3-jsonpatch
-      - python3-kubernetes
-    state: present
-  become: true
-
 - name: Create WordPress namespace
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -43,15 +30,24 @@
 - name: Include secrets tasks
   include_tasks: secrets.yml
 
-- name: Delete existing PVC if exists
+- name: Delete existing PVC
   kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}"
+    kubeconfig: "{{ kubeconfig }}" 
     state: absent
     api_version: v1
     kind: PersistentVolumeClaim
     namespace: "{{ wp_namespace }}"
     name: wp-pvc
   ignore_errors: true
+
+- name: Create PVC and wait
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: storage.yaml.j2
+    namespace: "{{ wp_namespace }}"
+    wait: yes
+    wait_timeout: 300
 
 - name: Create WordPress resources
   kubernetes.core.k8s:
@@ -60,7 +56,6 @@
     template: "{{ item }}"
     namespace: "{{ wp_namespace }}"
   loop:
-    - storage.yaml.j2
     - configmap.yaml.j2
     - secret.yaml.j2
     - deployment.yaml.j2

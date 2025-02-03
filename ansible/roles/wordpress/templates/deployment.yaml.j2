@@ -1,3 +1,4 @@
+# roles/wordpress/templates/deployment.yaml.j2
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,12 +15,18 @@ spec:
     metadata:
       labels:
         app: wordpress
+      annotations:
+        checksum/config: {{ lookup('template', 'configmap.yaml.j2') | hash }}
+        checksum/secret: {{ lookup('template', 'secret.yaml.j2') | hash }}
     spec:
       containers:
         - name: wordpress
-          image: wordpress:latest
+          image: wordpress:6.4.3-apache
+          imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 80
+            - name: http
+              containerPort: 80
+              protocol: TCP
           env:
             - name: WORDPRESS_DB_HOST
               valueFrom:
@@ -41,3 +48,74 @@ spec:
                 secretKeyRef:
                   name: wordpress-secret
                   key: WORDPRESS_DB_NAME
+            - name: WORDPRESS_CONFIG_EXTRA
+              value: |
+                define('WP_HOME', 'https://{{ wp_domain }}');
+                define('WP_SITEURL', 'https://{{ wp_domain }}');
+                define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL);
+                define('WP_DEBUG', true);
+                define('WP_DEBUG_LOG', true);
+                define('WP_DEBUG_DISPLAY', false);
+                @ini_set('display_errors', 0);
+          readinessProbe:
+            httpGet:
+              path: /wp-login.php
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /wp-login.php
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 60
+            timeoutSeconds: 5
+            periodSeconds: 20
+            successThreshold: 1
+            failureThreshold: 6
+          startupProbe:
+            httpGet:
+              path: /wp-login.php
+              port: http
+              scheme: HTTP
+            initialDelaySeconds: 30
+            timeoutSeconds: 5
+            periodSeconds: 10
+            successThreshold: 1
+            failureThreshold: 30
+          resources:
+            requests:
+              memory: {{ wp_memory_request }}
+              cpu: {{ wp_cpu_request }}
+            limits:
+              memory: {{ wp_memory_limit }}
+              cpu: {{ wp_cpu_limit }}
+          volumeMounts:
+            - name: wordpress-data
+              mountPath: /var/www/html
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "chown -R www-data:www-data /var/www/html"]
+      volumes:
+        - name: wordpress-data
+          persistentVolumeClaim:
+            claimName: wp-pvc
+      securityContext:
+        fsGroup: 33 # www-data group
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - wordpress
+                topologyKey: "kubernetes.io/hostname"
