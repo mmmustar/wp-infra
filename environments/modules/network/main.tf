@@ -59,13 +59,3 @@ resource "aws_route_table" "public" {
     Name = "public-route-table"
   }
 }
-
-# Vérification et correction des routes
-resource "aws_route" "fix_blackhole_route" {
-  route_table_id         = aws_route_table.public.id
-  destination_cidr_block = "10.0.0.0/16"
-
-  lifecycle {
-    ignore_changes = [destination_cidr_block]
-  }
-}
