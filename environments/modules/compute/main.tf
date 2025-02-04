@@ -12,8 +12,10 @@ data "aws_ami" "ubuntu" {
 resource "aws_instance" "wordpress" {
   ami           = data.aws_ami.ubuntu.id
   instance_type = var.instance_type
-  subnet_id     = var.subnet_id
+  subnet_id     = data.aws_subnet.rds_subnet.id
+  vpc_security_group_ids = [aws_security_group.wordpress.id]
   key_name      = var.key_name
+
 
   root_block_device {
     volume_size = 20
@@ -41,4 +43,11 @@ resource "aws_eip" "wordpress" {
     Environment = var.environment
     Project     = var.project_name
   }
+}
+data "aws_vpc" "rds_vpc" {
+  id = "vpc-0385cddb5bd815883"
+}
+
+data "aws_subnet" "rds_subnet" {
+  vpc_id = data.aws_vpc.rds_vpc.id
 }

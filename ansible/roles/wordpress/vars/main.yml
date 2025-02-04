@@ -1,6 +1,0 @@
-# roles/wordpress/vars/main.yml
----
-db_host: "{{ db_secrets.MYSQL_HOST }}"
-db_name: "{{ db_secrets.MYSQL_DATABASE }}"
-db_user: "{{ db_secrets.MYSQL_USER }}"
-db_password: "{{ db_secrets.MYSQL_PASSWORD }}"

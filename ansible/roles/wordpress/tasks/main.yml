@@ -1,4 +1,3 @@
-# wordpress-main.yml
 ---
 - name: Ensure kubeconfig directory exists
   file:
@@ -30,8 +29,15 @@
 - name: Include secrets tasks
   include_tasks: secrets.yml
 
-# Mise à l'échelle du déploiement WordPress à 0 pour libérer le PVC
-- name: Scale down WordPress deployment to 0 replicas
+- name: Check if WordPress deployment exists
+  kubernetes.core.k8s_info:
+    kubeconfig: "{{ kubeconfig }}"
+    kind: Deployment
+    name: wordpress
+    namespace: "{{ wp_namespace }}"
+  register: wp_deployment
+
+- name: Scale down WordPress deployment to 0 replicas (if it exists)
   kubernetes.core.k8s_scale:
     kubeconfig: "{{ kubeconfig }}"
     namespace: "{{ wp_namespace }}"
@@ -41,6 +47,7 @@
       metadata:
         name: wordpress
     replicas: 0
+  when: wp_deployment.resources | length > 0
 
 - name: Wait for WordPress pods to be terminated
   shell: >
@@ -49,8 +56,8 @@
   until: pod_count.stdout | int == 0
   retries: 10
   delay: 5
+  when: wp_deployment.resources | length > 0
 
-# Suppression du PVC existant (qui est en Terminating tant qu'un pod l'utilise)
 - name: Delete existing PVC
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -61,7 +68,6 @@
     name: wp-pvc
   ignore_errors: true
 
-# Création du PVC et attente de son provisionnement
 - name: Create PVC and wait
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -71,7 +77,6 @@
     wait: yes
     wait_timeout: 300
 
-# Création des ressources WordPress (configmap, secret, déploiement et service)
 - name: Create WordPress resources
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -84,7 +89,6 @@
     - deployment.yaml.j2
     - service.yaml.j2
 
-# Remise à niveau du déploiement WordPress au nombre de réplicas désiré
 - name: Scale up WordPress deployment to desired replicas
   kubernetes.core.k8s_scale:
     kubeconfig: "{{ kubeconfig }}"
@@ -96,7 +100,6 @@
         name: wordpress
     replicas: "{{ wp_replicas }}"
 
-# Pause additionnelle pour laisser le temps aux pods de démarrer et au PVC d'être lié
 - name: Pause 30 seconds to allow pods to start and PVC binding
   pause:
     seconds: 30
