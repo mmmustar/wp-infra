@@ -48,21 +48,20 @@ spec:
                 secretKeyRef:
                   name: wordpress-secret
                   key: WORDPRESS_DB_NAME
-            - name: WORDPRESS_CONFIG_EXTRA
-              value: |
-                define('WP_HOME', 'https://{{ wp_domain }}');
-                define('WP_SITEURL', 'https://{{ wp_domain }}');
-                define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL);
-                define('WP_DEBUG', true);
-                define('WP_DEBUG_LOG', true);
-                define('WP_DEBUG_DISPLAY', false);
-                @ini_set('display_errors', 0);
+          # Nous avons supprimé temporairement la variable WORDPRESS_CONFIG_EXTRA pour laisser WordPress générer sa configuration par défaut.
+          volumeMounts:
+            - name: wordpress-data
+              mountPath: /var/www/html
+          lifecycle:
+            postStart:
+              exec:
+                command: ["/bin/sh", "-c", "chown -R www-data:www-data /var/www/html"]
           readinessProbe:
             httpGet:
-              path: /wp-login.php
+              path: /
               port: http
               scheme: HTTP
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             timeoutSeconds: 5
             periodSeconds: 10
             successThreshold: 1
@@ -82,31 +81,24 @@ spec:
               path: /wp-login.php
               port: http
               scheme: HTTP
-            initialDelaySeconds: 30
+            initialDelaySeconds: 60
             timeoutSeconds: 5
             periodSeconds: 10
             successThreshold: 1
             failureThreshold: 30
           resources:
             requests:
-              memory: {{ wp_memory_request }}
               cpu: {{ wp_cpu_request }}
+              memory: {{ wp_memory_request }}
             limits:
-              memory: {{ wp_memory_limit }}
               cpu: {{ wp_cpu_limit }}
-          volumeMounts:
-            - name: wordpress-data
-              mountPath: /var/www/html
-          lifecycle:
-            postStart:
-              exec:
-                command: ["/bin/sh", "-c", "chown -R www-data:www-data /var/www/html"]
+              memory: {{ wp_memory_limit }}
       volumes:
         - name: wordpress-data
           persistentVolumeClaim:
             claimName: wp-pvc
       securityContext:
-        fsGroup: 33 # www-data group
+        fsGroup: 33  # www-data
       affinity:
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:

@@ -30,9 +30,30 @@
 - name: Include secrets tasks
   include_tasks: secrets.yml
 
+# Mise à l'échelle du déploiement WordPress à 0 pour libérer le PVC
+- name: Scale down WordPress deployment to 0 replicas
+  kubernetes.core.k8s_scale:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ wp_namespace }}"
+    resource_definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: wordpress
+    replicas: 0
+
+- name: Wait for WordPress pods to be terminated
+  shell: >
+    kubectl --kubeconfig={{ kubeconfig }} get pods -n {{ wp_namespace }} -l app=wordpress --no-headers | wc -l
+  register: pod_count
+  until: pod_count.stdout | int == 0
+  retries: 10
+  delay: 5
+
+# Suppression du PVC existant (qui est en Terminating tant qu'un pod l'utilise)
 - name: Delete existing PVC
   kubernetes.core.k8s:
-    kubeconfig: "{{ kubeconfig }}" 
+    kubeconfig: "{{ kubeconfig }}"
     state: absent
     api_version: v1
     kind: PersistentVolumeClaim
@@ -40,6 +61,7 @@
     name: wp-pvc
   ignore_errors: true
 
+# Création du PVC et attente de son provisionnement
 - name: Create PVC and wait
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -49,6 +71,7 @@
     wait: yes
     wait_timeout: 300
 
+# Création des ressources WordPress (configmap, secret, déploiement et service)
 - name: Create WordPress resources
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -60,6 +83,23 @@
     - secret.yaml.j2
     - deployment.yaml.j2
     - service.yaml.j2
+
+# Remise à niveau du déploiement WordPress au nombre de réplicas désiré
+- name: Scale up WordPress deployment to desired replicas
+  kubernetes.core.k8s_scale:
+    kubeconfig: "{{ kubeconfig }}"
+    namespace: "{{ wp_namespace }}"
+    resource_definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: wordpress
+    replicas: "{{ wp_replicas }}"
+
+# Pause additionnelle pour laisser le temps aux pods de démarrer et au PVC d'être lié
+- name: Pause 30 seconds to allow pods to start and PVC binding
+  pause:
+    seconds: 30
 
 - name: Include Ingress tasks
   include_tasks: ingress.yml
@@ -75,7 +115,7 @@
     namespace: "{{ wp_namespace }}"
   register: wp_deployment
   until: wp_deployment.resources[0].status.availableReplicas is defined and wp_deployment.resources[0].status.availableReplicas > 0
-  retries: 30
+  retries: 15
   delay: 10
 
 - name: Display WordPress deployment status
