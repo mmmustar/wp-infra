@@ -54,7 +54,9 @@ variable "ec2_vpc_id" {
 variable "ec2_cidr_block" {
   description = "CIDR block du VPC de l'EC2"
   type        = string
+  default     = "172.16.0.0/16"
 }
+
 
 variable "route_table_id" {
   description = "ID de la table de routage du VPC de l'EC2"
