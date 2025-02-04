@@ -24,21 +24,7 @@ variable "environment" {
   type        = string
 }
 
-# Define the VPC
-resource "aws_vpc" "main" {
-  cidr_block = "10.0.0.0/16"
-
-  tags = {
-    Name = "main-vpc"
-  }
-}
-
-# Define the availability zones data source
-data "aws_availability_zones" "available" {
-  state = "available"
-}
-
-# Modules
+# Modules (Correction des chemins)
 module "network" {
   source              = "../modules/network"
   environment         = var.environment
@@ -106,8 +92,6 @@ resource "aws_security_group" "wordpress_test" {
     Environment = var.environment
     Project     = var.project_name
   }
-
-  depends_on = [module.network]
 }
 
 # Existing EIP
@@ -126,7 +110,7 @@ resource "aws_iam_instance_profile" "ec2_secrets_manager_profile" {
   role = data.aws_iam_role.ec2_secrets_manager_role.name
 }
 
-# EC2 Instance
+# EC2 Instance (Correction pour SSH et connexion réseau)
 resource "aws_instance" "wordpress_test" {
   ami                         = "ami-06e02ae7bdac6b938"
   instance_type               = "t3.medium"
@@ -135,6 +119,14 @@ resource "aws_instance" "wordpress_test" {
   key_name                    = "test-aws-key-pair-new"
   associate_public_ip_address = true
   iam_instance_profile        = aws_iam_instance_profile.ec2_secrets_manager_profile.name
+
+  user_data = <<-EOF
+              #!/bin/bash
+              sudo apt update -y
+              sudo apt install -y openssh-server
+              sudo systemctl enable ssh
+              sudo systemctl start ssh
+              EOF
 
   root_block_device {
     volume_size           = 8

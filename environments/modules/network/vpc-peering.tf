@@ -8,11 +8,18 @@ resource "aws_vpc_peering_connection" "ec2_to_rds" {
   }
 }
 
+data "aws_route" "existing_route" {
+  route_table_id         = var.route_table_id
+  destination_cidr_block = var.rds_cidr_block
+}
+
 resource "aws_route" "ec2_to_rds_route" {
-  route_table_id         = var.route_table_id  # Correction ici !
+  count                  = length(data.aws_route.existing_route) == 0 ? 1 : 0
+  route_table_id         = var.route_table_id
   destination_cidr_block = var.rds_cidr_block
   vpc_peering_connection_id = aws_vpc_peering_connection.ec2_to_rds.id
 }
+
 
 resource "aws_route" "rds_to_ec2_route" {
   route_table_id         = var.rds_route_table_id
