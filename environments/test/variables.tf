@@ -52,3 +52,7 @@ variable "ec2_cidr_block" {
   type        = string
 }
 
+variable "route_table_id" {
+  description = "ID de la table de routage du VPC de l'EC2"
+  type        = string
+}

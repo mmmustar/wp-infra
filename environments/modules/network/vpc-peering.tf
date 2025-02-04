@@ -1,15 +1,15 @@
 resource "aws_vpc_peering_connection" "ec2_to_rds" {
-  vpc_id        = var.ec2_vpc_id
-  peer_vpc_id   = var.rds_vpc_id
-  auto_accept   = false
+  vpc_id      = var.ec2_vpc_id
+  peer_vpc_id = var.rds_vpc_id
+  auto_accept = false
 
   tags = {
-    Name = "ec2-to-rds-peering"
+    Name = "${var.project_name}-ec2-to-rds-peering-${var.environment}"
   }
 }
 
 resource "aws_route" "ec2_to_rds_route" {
-  route_table_id         = aws_route_table.public.id
+  route_table_id         = var.route_table_id  # Correction ici !
   destination_cidr_block = var.rds_cidr_block
   vpc_peering_connection_id = aws_vpc_peering_connection.ec2_to_rds.id
 }

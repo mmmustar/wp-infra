@@ -53,8 +53,8 @@ module "network" {
   rds_cidr_block        = var.rds_cidr_block
   rds_route_table_id    = var.rds_route_table_id
   rds_security_group_id = var.rds_security_group_id
+  route_table_id        = module.network.route_table_id # Ajout ici !
 }
-
 
 module "k3s" {
   source      = "../modules/k3s"
