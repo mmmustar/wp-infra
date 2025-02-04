@@ -23,13 +23,15 @@ variable "public_subnet_cidrs" {
 }
 
 variable "rds_vpc_id" {
-  description = "ID du VPC du RDS"
+  description = "RDS VPC ID"
   type        = string
+  default     = "vpc-0385cddb5bd815883" # Your existing RDS VPC ID
 }
 
 variable "rds_cidr_block" {
-  description = "Plage CIDR du VPC RDS"
+  description = "RDS VPC CIDR block"
   type        = string
+  default     = "10.0.0.0/16" # Adjust to match your RDS VPC CIDR
 }
 
 variable "rds_route_table_id" {
@@ -38,8 +40,9 @@ variable "rds_route_table_id" {
 }
 
 variable "rds_security_group_id" {
-  description = "ID du Security Group du RDS"
+  description = "RDS Security Group ID"
   type        = string
+  default     = "sg-00efe258e85b22a30" # Your existing RDS SG ID
 }
 
 variable "ec2_vpc_id" {
