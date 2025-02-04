@@ -41,18 +41,18 @@ data "aws_availability_zones" "available" {
 # Modules
 module "network" {
   source              = "../modules/network"
-  project_name        = var.project_name
   environment         = var.environment
-  vpc_cidr            = var.vpc_cidr
-  public_subnet_cidrs = var.public_subnet_cidrs
-
-  ec2_vpc_id            = var.ec2_vpc_id
-  ec2_cidr_block        = var.ec2_cidr_block
+  project_name        = var.project_name
+  vpc_cidr            = var.ec2_cidr_block
+  public_subnet_cidrs = ["172.16.1.0/24", "172.16.2.0/24"]
+  
   rds_vpc_id            = var.rds_vpc_id
   rds_cidr_block        = var.rds_cidr_block
+  ec2_vpc_id            = module.network.vpc_id
+  ec2_cidr_block        = var.ec2_cidr_block
   rds_route_table_id    = var.rds_route_table_id
-  rds_security_group_id = var.rds_security_group_id
-  route_table_id        = module.network.route_table_id # Ajout ici !
+  rds_security_group_id = data.aws_security_group.rds.id
+  route_table_id        = module.network.route_table_id
 }
 
 module "k3s" {

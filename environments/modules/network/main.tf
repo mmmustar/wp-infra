@@ -46,6 +46,11 @@ resource "aws_route_table" "public" {
     gateway_id = aws_internet_gateway.main.id
   }
 
+  route {
+    cidr_block = var.rds_cidr_block
+    vpc_peering_connection_id = aws_vpc_peering_connection.ec2_to_rds.id
+  }
+
   tags = {
     Name        = "${var.project_name}-public-rt-${var.environment}"
     Environment = var.environment

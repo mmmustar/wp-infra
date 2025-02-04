@@ -37,6 +37,7 @@ variable "rds_cidr_block" {
 variable "rds_route_table_id" {
   description = "ID de la table de routage du VPC du RDS"
   type        = string
+  default     = "rtb-0219653c2d8a675c9"
 }
 
 variable "rds_security_group_id" {
