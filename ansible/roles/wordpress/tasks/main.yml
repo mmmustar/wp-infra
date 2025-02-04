@@ -37,15 +37,12 @@
     namespace: "{{ wp_namespace }}"
   register: wp_deployment
 
-- name: Scale down WordPress deployment to 0 replicas (if it exists)
+- name: Scale down WordPress deployment to 0 replicas if it exists
   kubernetes.core.k8s_scale:
     kubeconfig: "{{ kubeconfig }}"
     namespace: "{{ wp_namespace }}"
-    resource_definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: wordpress
+    kind: Deployment
+    name: wordpress
     replicas: 0
   when: wp_deployment.resources | length > 0
 
@@ -68,14 +65,21 @@
     name: wp-pvc
   ignore_errors: true
 
-- name: Create PVC and wait
+- name: Create PVC and wait for binding
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
     state: present
-    template: storage.yaml.j2
+    definition: "{{ lookup('template', 'storage.yaml.j2') | from_yaml }}"
     namespace: "{{ wp_namespace }}"
-    wait: yes
-    wait_timeout: 300
+  register: pvc_result
+
+- name: Wait for PVC to be Bound
+  shell: >
+    kubectl --kubeconfig={{ kubeconfig }} get pvc -n {{ wp_namespace }} wp-pvc -o jsonpath='{.status.phase}'
+  register: pvc_status
+  until: pvc_status.stdout == "Bound"
+  retries: 20
+  delay: 5
 
 - name: Create WordPress resources
   kubernetes.core.k8s:
@@ -117,7 +121,7 @@
     name: wordpress
     namespace: "{{ wp_namespace }}"
   register: wp_deployment
-  until: wp_deployment.resources[0].status.availableReplicas is defined and wp_deployment.resources[0].status.availableReplicas > 0
+  until: wp_deployment.resources | length > 0 and wp_deployment.resources[0].status.availableReplicas is defined and wp_deployment.resources[0].status.availableReplicas > 0
   retries: 15
   delay: 10
 

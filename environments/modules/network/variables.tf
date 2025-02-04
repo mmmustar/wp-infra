@@ -1,24 +1,49 @@
-# environments/modules/network/variables.tf
-variable "environment" {
-  description = "Environment name (test/prod)"
-  type        = string
-}
-
 variable "project_name" {
-  description = "Project name for resource tagging"
+  description = "Nom du projet"
   type        = string
-  default     = "wordpress-mmustar"
 }
 
-# environments/modules/network/variables.tf
-variable "vpc_cidr" {
-  description = "CIDR block for VPC"
+variable "environment" {
+  description = "Environnement (test, prod)"
   type        = string
-  default     = "172.16.0.0/16"  # Modifié pour éviter le conflit avec le RDS VPC
+}
+
+variable "vpc_cidr" {
+  description = "CIDR block du VPC"
+  type        = string
 }
 
 variable "public_subnet_cidrs" {
-  description = "CIDR blocks for public subnets"
+  description = "CIDR des subnets publics"
   type        = list(string)
-  default     = ["172.16.1.0/24", "172.16.2.0/24"]  # Ajusté en conséquence
+}
+
+variable "rds_vpc_id" {
+  description = "ID du VPC contenant le RDS"
+  type        = string
+}
+
+variable "rds_cidr_block" {
+  description = "Plage CIDR du VPC RDS"
+  type        = string
+}
+
+variable "rds_route_table_id" {
+  description = "ID de la table de routage du VPC contenant le RDS"
+  type        = string
+}
+
+variable "rds_security_group_id" {
+  description = "ID du Security Group du RDS"
+  type        = string
+}
+
+variable "ec2_vpc_id" {
+  description = "ID du VPC de l'EC2"
+  type        = string
+}
+
+variable "ec2_cidr_block" {
+  description = "Plage CIDR du VPC de l'EC2"
+  type        = string
 }

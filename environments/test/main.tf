@@ -40,12 +40,21 @@ data "aws_availability_zones" "available" {
 
 # Modules
 module "network" {
-  source              = "../modules/network"
-  environment         = var.environment
+  source = "../modules/network"
+
   project_name        = var.project_name
-  vpc_cidr            = "10.0.0.0/16"
-  public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
+  environment         = var.environment
+  vpc_cidr            = var.vpc_cidr
+  public_subnet_cidrs = var.public_subnet_cidrs
+
+  ec2_vpc_id            = var.ec2_vpc_id
+  ec2_cidr_block        = var.ec2_cidr_block
+  rds_vpc_id            = var.rds_vpc_id
+  rds_cidr_block        = var.rds_cidr_block
+  rds_route_table_id    = var.rds_route_table_id
+  rds_security_group_id = var.rds_security_group_id
 }
+
 
 module "k3s" {
   source      = "../modules/k3s"
@@ -130,7 +139,7 @@ resource "aws_instance" "wordpress_test" {
 
   root_block_device {
     volume_size           = 8
-    volume_type          = "gp3"
+    volume_type           = "gp3"
     delete_on_termination = true
   }
 
