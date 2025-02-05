@@ -1,0 +1,34 @@
+---
+# 1. Récupérer les credentials de la base via AWS Secrets Manager
+- name: Récupérer les credentials DB de WordPress depuis AWS Secrets Manager
+  set_fact:
+    wordpress_db_credentials: "{{ lookup('community.aws.aws_secret', wordpress_secret_name, region='eu-west-3') | from_json }}"
+  delegate_to: localhost
+
+- name: Définir la variable du mot de passe WordPress DB
+  set_fact:
+    wordpress_db_password: "{{ wordpress_db_credentials.wordpress_db_password }}"
+
+# 2. Déployer le container WordPress
+
+- name: Pull de l'image officielle WordPress
+  community.docker.docker_image:
+    name: "{{ wordpress_image.split(':')[0] }}"
+    tag: "{{ wordpress_image.split(':')[1] | default('latest') }}"
+    source: pull
+
+- name: Lancer le container WordPress
+  community.docker.docker_container:
+    name: wordpress
+    image: "{{ wordpress_image }}"
+    state: started
+    restart_policy: always
+    published_ports:
+      - "{{ wordpress_port }}:80"
+    env:
+      WORDPRESS_DB_HOST: "{{ rds_endpoint }}"
+      WORDPRESS_DB_NAME: "{{ wordpress_db_name }}"
+      WORDPRESS_DB_USER: "{{ wordpress_db_user }}"
+      WORDPRESS_DB_PASSWORD: "{{ wordpress_db_password }}"
+    volumes:
+      - /var/www/html

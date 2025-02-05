@@ -1,19 +1,12 @@
-# ansible/site.yml
-
-- name: Configuration complète des serveurs WordPress
+---
+- name: Déployer l’infrastructure complète WordPress
   hosts: wordpress
   become: true
-
-  pre_tasks:
-    - name: Install Python 3 if not already installed
-      raw: |
-        sudo apt update && sudo apt install -y python3
-      changed_when: false
-
+  gather_facts: true
+  vars:
+    ansible_pkg_mgr: apt
   roles:
     - common
     - docker
     - k3s
-    
-  vars:
-    ansible_pkg_mgr: apt
+    - wordpress

@@ -1,0 +1,13 @@
+---
+# Variables spécifiques pour le déploiement WordPress
+
+# Informations sur la base RDS existante
+rds_endpoint: "your-rds-endpoint.rds.amazonaws.com"
+wordpress_db_name: "wordpress_db"
+wordpress_db_user: "wp_user"
+# Le mot de passe sera récupéré via AWS Secrets Manager,
+# le nom ou ARN du secret à utiliser :
+wordpress_secret_name: "wordpress/db_credentials"
+
+# Port local sur lequel exposer le container WordPress (accessible sur l'instance)
+wordpress_port: 8080

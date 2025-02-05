@@ -1,0 +1,3 @@
+---
+# Valeurs par défaut pour le rôle WordPress
+wordpress_image: wordpress:latest

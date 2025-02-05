@@ -19,7 +19,7 @@ data "aws_vpc" "existing" {
 // Création d'un nouveau sous-réseau dédié aux instances EC2 dans le VPC existant
 resource "aws_subnet" "compute" {
   vpc_id                  = data.aws_vpc.existing.id
-  cidr_block              = "10.0.100.0/24"  # Doit être un sous-ensemble du VPC (par exemple, si le VPC est en 10.0.0.0/16)
+  cidr_block              = "10.0.100.0/24"  // Sous-ensemble du VPC (par ex. 10.0.0.0/16)
   availability_zone       = "eu-west-3a"
   map_public_ip_on_launch = true
 
@@ -38,14 +38,14 @@ module "security" {
   vpc_id       = data.aws_vpc.existing.id
 }
 
-// Appel du module Compute en lui passant le VPC existant et le sous-réseau créé ci-dessus
+// Appel du module Compute en lui passant le VPC existant, le sous-réseau créé, et le SG défini dans le module Security
 module "compute" {
   source            = "../modules/compute"
   environment       = var.environment
   project_name      = var.project_name
   vpc_id            = data.aws_vpc.existing.id
   subnet_id         = aws_subnet.compute.id
-  security_group_id = module.security.wordpress_sg_id
+  security_group_id = module.security.wordpress_sg_id   // On passe ici l'ID du SG via security_group_id
   instance_type     = "t3.medium"
   key_name          = "test-aws-key-pair-new"
 }
@@ -53,7 +53,7 @@ module "compute" {
 // Association de l'EIP existante à l'instance EC2
 resource "aws_eip_association" "wordpress_eip_assoc" {
   instance_id   = module.compute.instance_id
-  allocation_id = "eipalloc-0933b219497dd6c15"  // Utilise l'EIP existante
+  allocation_id = "eipalloc-0933b219497dd6c15"
 }
 
 // Récupération de l'EIP existante via un data source
