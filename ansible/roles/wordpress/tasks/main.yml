@@ -1,23 +1,30 @@
 ---
-# 1. Récupérer les credentials de la base via AWS Secrets Manager
-- name: Récupérer les credentials DB de WordPress depuis AWS Secrets Manager
-  set_fact:
-    wordpress_db_credentials: "{{ lookup('community.aws.aws_secret', wordpress_secret_name, region='eu-west-3') | from_json }}"
+- name: Create WordPress data directory
+  file:
+    path: "{{ wp_volume_path }}"
+    state: directory
+    mode: '0755'
+
+- name: Get WordPress credentials from AWS Secrets Manager
+  community.aws.aws_secret:
+    name: "book"
+    region: "{{ aws_region }}"
+  register: wp_secrets
   delegate_to: localhost
-
-- name: Définir la variable du mot de passe WordPress DB
+  become: false
+  environment:
+    AWS_ACCESS_KEY_ID: "{{ aws_access_key }}"
+    AWS_SECRET_ACCESS_KEY: "{{ aws_secret_key }}"
+  
+- name: Set WordPress DB variables
   set_fact:
-    wordpress_db_password: "{{ wordpress_db_credentials.wordpress_db_password }}"
+    mysql_host: "{{ wp_secrets.secret | from_json | json_query('MYSQL_HOST') }}"
+    mysql_user: "{{ wp_secrets.secret | from_json | json_query('MYSQL_USER') }}"
+    mysql_password: "{{ wp_secrets.secret | from_json | json_query('MYSQL_PASSWORD') }}"
+    mysql_database: "{{ wp_secrets.secret | from_json | json_query('MYSQL_DATABASE') }}"
+    mysql_port: "{{ wp_secrets.secret | from_json | json_query('MYSQL_PORT') }}"
 
-# 2. Déployer le container WordPress
-
-- name: Pull de l'image officielle WordPress
-  community.docker.docker_image:
-    name: "{{ wordpress_image.split(':')[0] }}"
-    tag: "{{ wordpress_image.split(':')[1] | default('latest') }}"
-    source: pull
-
-- name: Lancer le container WordPress
+- name: Create WordPress container
   community.docker.docker_container:
     name: wordpress
     image: "{{ wordpress_image }}"
@@ -26,9 +33,9 @@
     published_ports:
       - "{{ wordpress_port }}:80"
     env:
-      WORDPRESS_DB_HOST: "{{ rds_endpoint }}"
-      WORDPRESS_DB_NAME: "{{ wordpress_db_name }}"
-      WORDPRESS_DB_USER: "{{ wordpress_db_user }}"
-      WORDPRESS_DB_PASSWORD: "{{ wordpress_db_password }}"
+      WORDPRESS_DB_HOST: "{{ mysql_host }}:{{ mysql_port }}"
+      WORDPRESS_DB_USER: "{{ mysql_user }}"
+      WORDPRESS_DB_PASSWORD: "{{ mysql_password }}"
+      WORDPRESS_DB_NAME: "{{ mysql_database }}"
     volumes:
-      - /var/www/html
+      - "{{ wp_volume_path }}:/var/www/html"
