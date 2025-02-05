@@ -53,3 +53,9 @@ variable "existing_rds_id" {
   type        = string
   default     = "wordpress-db"
 }
+
+
+variable "elastic_ip_allocation_id" {
+  description = "Existing Elastic IP allocation ID"
+  default     = "eipalloc-0933b219497dd6c15"
+}
