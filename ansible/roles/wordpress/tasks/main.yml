@@ -73,14 +73,6 @@
     namespace: "{{ wp_namespace }}"
   register: pvc_result
 
-- name: Wait for PVC to be Bound
-  shell: >
-    kubectl --kubeconfig={{ kubeconfig }} get pvc -n {{ wp_namespace }} wp-pvc -o jsonpath='{.status.phase}'
-  register: pvc_status
-  until: pvc_status.stdout == "Bound"
-  retries: 20
-  delay: 5
-
 - name: Create WordPress resources
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"

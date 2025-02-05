@@ -47,22 +47,22 @@ spec:
           volumeMounts:
             - name: wordpress-data
               mountPath: /var/www/html
-          readinessProbe:
-            httpGet:
-              path: /wp-login.php
-              port: http
-            initialDelaySeconds: 60
-            timeoutSeconds: 5
-            periodSeconds: 10
-            failureThreshold: 3
-          livenessProbe:
-            httpGet:
-              path: /wp-login.php
-              port: http
-            initialDelaySeconds: 60
-            timeoutSeconds: 5
-            periodSeconds: 20
-            failureThreshold: 6
+#          readinessProbe:
+#            httpGet:
+#              path: /wp-login.php
+#              port: http
+#            initialDelaySeconds: 60
+#            timeoutSeconds: 5
+#            periodSeconds: 10
+#            failureThreshold: 3
+#          livenessProbe:
+#            httpGet:
+#              path: /wp-login.php
+#              port: http
+#            initialDelaySeconds: 60
+#            timeoutSeconds: 5
+#            periodSeconds: 20
+#            failureThreshold: 6
       volumes:
         - name: wordpress-data
           persistentVolumeClaim:
