@@ -26,7 +26,7 @@ variable "environment" {
 
 # Network module
 module "network" {
- source               = "../modules/network"
+ source               = "../environments/modules/network"
  environment          = var.environment
  project_name         = var.project_name
  vpc_cidr             = "10.0.0.0/16"
