@@ -22,3 +22,9 @@ variable "public_subnet_cidrs" {
   type        = list(string)
   default     = ["172.16.1.0/24", "172.16.2.0/24"]  # Ajusté en conséquence
 }
+
+variable "existing_vpc_id" {
+  description = "ID of an existing VPC. If provided, the module will use this VPC instead of creating a new one."
+  type        = string
+  default     = ""
+}

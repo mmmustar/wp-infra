@@ -1,7 +1,8 @@
-# environments/modules/compute/main.tf
+// environments/modules/compute/main.tf
+
 data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["099720109477"] # Canonical
+  owners      = ["099720109477"]  // Propriétaire Canonical
 
   filter {
     name   = "name"
@@ -25,20 +26,19 @@ resource "aws_instance" "wordpress" {
     Environment = var.environment
     Project     = var.project_name
   }
-
-  lifecycle {
-    prevent_destroy = true
-  }
 }
 
-resource "aws_eip" "wordpress" {
-  count    = var.environment == "test" ? 1 : 0
-  instance = aws_instance.wordpress.id
-  domain   = "vpc"
+output "instance_id" {
+  description = "ID of the created EC2 instance"
+  value       = aws_instance.wordpress.id
+}
 
-  tags = {
-    Name        = "${var.project_name}-eip-${var.environment}"
-    Environment = var.environment
-    Project     = var.project_name
-  }
+output "instance_public_ip" {
+  description = "Public IP of the EC2 instance"
+  value       = aws_instance.wordpress.public_ip
+}
+
+output "instance_private_ip" {
+  description = "Private IP of the EC2 instance"
+  value       = aws_instance.wordpress.private_ip
 }

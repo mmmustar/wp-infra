@@ -1,4 +1,5 @@
-# environments/modules/security/variables.tf
+// environments/modules/security/variables.tf
+
 variable "environment" {
   description = "Environment name (test/prod)"
   type        = string
