@@ -59,3 +59,23 @@ resource "aws_dynamodb_table" "terraform_locks" {
     Project = var.project_name
   }
 }
+
+provider "aws" {
+  region = "eu-west-3"
+}
+
+resource "aws_instance" "wordpress" {
+  ami           = "ami-12345678" # Remplace par l'AMI correcte
+  instance_type = "t3.medium"
+  subnet_id     = aws_subnet.wordpress_subnet.id
+  key_name      = "test-aws-key-pair-new"
+
+  tags = {
+    Name = "wordpress-instance"
+  }
+}
+
+resource "aws_eip_association" "wordpress_eip_assoc" {
+  allocation_id = aws_eip.wordpress_eip.id
+  instance_id   = aws_instance.wordpress.id
+}
