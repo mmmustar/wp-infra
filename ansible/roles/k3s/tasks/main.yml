@@ -1,8 +1,11 @@
-# roles/k3s/tasks/main.yml
 ---
-# Étape 1: Configuration initiale
+- name: Wait for k3s API availability
+  wait_for:
+    path: /etc/rancher/k3s/k3s.yaml
+    timeout: 300
+
 - name: Get subnet IDs from AWS
-  shell: >
+  ansible.builtin.shell: >
     aws ec2 describe-subnets
     --region {{ aws_region }}
     --filters "Name=tag:Project,Values={{ project_name }}" "Name=tag:Environment,Values={{ environment }}"
@@ -14,19 +17,18 @@
   changed_when: false
 
 - name: Set subnet ID
-  set_fact:
+  ansible.builtin.set_fact:
     public_subnet_id: "{{ subnet_info.stdout }}"
   when: subnet_info.stdout != ""
 
-# Étape 2: Installation de K3s
 - name: Download k3s installation script
-  get_url:
+  ansible.builtin.get_url:
     url: https://get.k3s.io
     dest: /tmp/k3s-install.sh
     mode: '0755'
 
 - name: Install k3s
-  shell: 
+  ansible.builtin.shell: 
     cmd: INSTALL_K3S_VERSION={{ k3s_version }} /tmp/k3s-install.sh --write-kubeconfig-mode 644 {{ k3s_server_args }}
   args:
     creates: /usr/local/bin/k3s
@@ -35,37 +37,42 @@
   register: k3s_install
 
 - name: Wait for k3s service to start
-  systemd:
+  ansible.builtin.systemd:
     name: k3s
     state: started
     enabled: yes
   register: k3s_service
 
 - name: Configure kubeconfig permissions
-  file:
+  ansible.builtin.file:
     path: /etc/rancher/k3s/k3s.yaml
     mode: '0644'
   become: true
 
 - name: Set KUBECONFIG environment variable
-  lineinfile:
+  ansible.builtin.lineinfile:
     path: /home/{{ ansible_user }}/.bashrc
     line: "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml"
     state: present
   become: true
 
-# Étape 3: Vérification de l'installation
+- name: Verify kubernetes connection
+  ansible.builtin.command: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml cluster-info
+  register: cluster_info
+  until: cluster_info.rc == 0
+  retries: 30
+  delay: 10
+
 - name: Wait for k3s node to be ready
-  shell: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes
+  ansible.builtin.shell: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes
   register: node_status
   until: "'Ready' in node_status.stdout"
   retries: 30
   delay: 10
   become: true
 
-# Étape 4: Configuration du Security Group
 - name: Add NodePort range to security group
-  shell: >
+  ansible.builtin.shell: >
     aws ec2 authorize-security-group-ingress 
     --region {{ aws_region }}
     --group-id {{ security_group_id }}
@@ -80,20 +87,30 @@
     - '"InvalidPermission.Duplicate" not in sg_result.stderr'
   changed_when: sg_result.rc == 0
 
-# Étape 5: Installation de Helm
 - name: Include Helm installation tasks
-  include_tasks: helm.yml
+  ansible.builtin.include_tasks: helm.yml
 
-# Étape 6: Installation de NGINX Ingress
+- name: Create kube-system namespace
+  kubernetes.core.k8s:
+    name: kube-system
+    api_version: v1
+    kind: Namespace
+    state: present
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+  register: namespace_result
+  until: namespace_result is not failed
+  retries: 10
+  delay: 30
+
 - name: Add ingress-nginx repository
-  command: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  ansible.builtin.command: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   changed_when: true
   ignore_errors: true
 
 - name: Update Helm repos
-  command: helm repo update
+  ansible.builtin.command: helm repo update
   environment:
     KUBECONFIG: /etc/rancher/k3s/k3s.yaml
   changed_when: true
@@ -116,7 +133,7 @@
   register: nginx_helm_result
 
 - name: Wait for ingress-nginx pods to be Running
-  shell: >
+  ansible.builtin.shell: >
     kubectl get pods -n ingress-nginx -l app.kubernetes.io/component=controller --no-headers
   register: nginx_pod_status
   until: nginx_pod_status.rc == 0 and 'Running' in nginx_pod_status.stdout
@@ -124,26 +141,24 @@
   delay: 10
 
 - name: Display ingress-nginx pod logs if not running
-  shell: kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
+  ansible.builtin.shell: kubectl logs -n ingress-nginx -l app.kubernetes.io/component=controller --tail=50
   register: nginx_logs
   when: "'Running' not in nginx_pod_status.stdout"
 
 - name: Show pod logs
-  debug:
+  ansible.builtin.debug:
     var: nginx_logs.stdout_lines
   when: nginx_logs is defined
 
-# Étape 7: Installation du EBS CSI Driver
 - name: Include EBS CSI tasks
-  include_tasks: ebs-csi.yml
+  ansible.builtin.include_tasks: ebs-csi.yml
   when: ebs_csi_enabled
 
-# Étape 8: Vérification finale
 - name: Verify cluster status
-  command: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes,pods --all-namespaces
+  ansible.builtin.command: kubectl --kubeconfig=/etc/rancher/k3s/k3s.yaml get nodes,pods --all-namespaces
   register: cluster_status
   changed_when: false
 
 - name: Show cluster status
-  debug:
+  ansible.builtin.debug:
     var: cluster_status.stdout_lines

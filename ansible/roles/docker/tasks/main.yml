@@ -1,4 +1,10 @@
-- name: Install required packages
+- name: Update apt cache
+  become: true
+  apt:
+    update_cache: yes
+
+- name: Install dependencies
+  become: true
   apt:
     name:
       - apt-transport-https
@@ -9,32 +15,37 @@
     state: present
 
 - name: Add Docker GPG key
+  become: true
   apt_key:
     url: https://download.docker.com/linux/ubuntu/gpg
     state: present
 
 - name: Add Docker repository
+  become: true
   apt_repository:
-    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
     state: present
+    filename: docker
 
-- name: Install Docker
+- name: Install Docker packages
+  become: true
   apt:
     name:
-      - docker-ce
-      - docker-ce-cli
-      - containerd.io
-      - docker-compose-plugin
+      - docker-ce=5:20.10.24~3-0~ubuntu-focal
+      - docker-ce-cli=5:20.10.24~3-0~ubuntu-focal
+      - containerd.io=1.6.21-1
     state: present
     update_cache: yes
 
-- name: Start and enable Docker
+- name: Start and enable Docker service
+  become: true
   service:
     name: docker
     state: started
     enabled: yes
 
 - name: Add users to docker group
+  become: true
   user:
     name: "{{ item }}"
     groups: docker
@@ -42,7 +53,9 @@
   with_items: "{{ docker_users }}"
 
 - name: Configure Docker daemon
+  become: true
   copy:
+    dest: /etc/docker/daemon.json
     content: |
       {
         "log-driver": "json-file",
@@ -51,5 +64,4 @@
           "max-file": "3"
         }
       }
-    dest: /etc/docker/daemon.json
   notify: restart docker
