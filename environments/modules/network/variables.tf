@@ -7,7 +7,7 @@ variable "environment" {
 variable "project_name" {
   description = "Project name for resource tagging"
   type        = string
-  default     = "wordpress-mmustar"
+  default     = "WP"
 }
 
 # environments/modules/network/variables.tf
