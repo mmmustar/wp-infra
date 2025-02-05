@@ -47,13 +47,14 @@
     mode: '0644'
   when: ebs_csi_enabled
 
-- name: Create kube-system namespace if not exists
+- name: Create kube-system namespace
   kubernetes.core.k8s:
     name: kube-system
     api_version: v1
     kind: Namespace
     state: present
     kubeconfig: /etc/rancher/k3s/k3s.yaml
+
 
 - name: Install AWS EBS CSI Driver
   kubernetes.core.helm:
