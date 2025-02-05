@@ -140,10 +140,10 @@ resource "aws_instance" "wordpress_test" {
 #   id = "eipalloc-xxxxxxxxxxx"
 # }
 
-# resource "aws_eip_association" "wordpress_eip" {
-#   instance_id   = aws_instance.wordpress_test.id
-#   allocation_id = data.aws_eip.existing_eip.id
-# }
+resource "aws_eip_association" "wordpress_eip_assoc" {
+  allocation_id = "eipalloc-0933b219497dd6c15"
+  instance_id   = module.compute.instance_id
+}
 
 ############################################################
 # Data source pour RDS existant, si besoin
@@ -172,4 +172,14 @@ output "instance_id" {
 output "public_ip" {
   description = "Public IP of EC2"
   value       = aws_instance.wordpress_test.public_ip
+}
+
+module "compute" {
+  source = "../../environments/modules/compute"
+
+  vpc_id        = var.existing_vpc_id
+  subnet_id     = var.existing_subnet_id
+  key_name      = var.key_name
+  environment   = var.environment
+  project_name  = var.project_name
 }
