@@ -1,4 +1,6 @@
-# Provider configuration
+############################################################
+# environments/test/main.tf
+############################################################
 terraform {
   required_providers {
     aws = {
@@ -10,77 +12,66 @@ terraform {
 }
 
 provider "aws" {
-  region = "eu-west-3"
+  region = var.aws_region
 }
 
-# Variables
-variable "project_name" {
-  description = "The name of the project"
-  type        = string
+############################################################
+# RÉUTILISER LE VPC EXISTANT
+#
+# On suppose que vous avez déjà :
+#   - vpc-0385cddb5bd815883  (VPC existant)
+#   - un ou deux subnets (publics ou privés) 
+#     ex: subnet-07dfe7a7cdcb5036e, subnet-085d8f8361978d689
+#
+# Ici, on va juste pointer sur un Subnet existant (public)
+############################################################
+
+# Donnée ou variable : ID du VPC existant
+data "aws_vpc" "existing" {
+  id = var.existing_vpc_id
 }
 
-variable "environment" {
-  description = "The environment for deployment"
-  type        = string
+# Donnée ou variable : un Subnet (public) existant dans ce VPC
+# => Remplacez par votre subnet réellement accessible
+data "aws_subnet" "public" {
+  id = var.existing_subnet_id
 }
 
-# Modules (Correction des chemins)
-module "network" {
-  source              = "../modules/network"
-  environment         = var.environment
-  project_name        = var.project_name
-  vpc_cidr            = var.ec2_cidr_block
-  public_subnet_cidrs = ["172.16.1.0/24", "172.16.2.0/24"]
-  
-  rds_vpc_id            = var.rds_vpc_id
-  rds_cidr_block        = var.rds_cidr_block
-  ec2_vpc_id            = module.network.vpc_id
-  ec2_cidr_block        = var.ec2_cidr_block
-  rds_route_table_id    = var.rds_route_table_id
-  rds_security_group_id = data.aws_security_group.rds.id
-  route_table_id        = module.network.route_table_id
-}
-
-module "k3s" {
-  source      = "../modules/k3s"
-  environment = var.environment
-}
-
-# Security Group
-resource "aws_security_group" "wordpress_test" {
-  name_prefix = "WP-SecurityGroup-Test-"
+############################################################
+# Sécurité : on définit (ou réutilise) un SG
+# Ici, on crée un nouveau SG "wordpress_test_sg" 
+# dans le VPC existant, qui autorise HTTP, HTTPS, SSH...
+############################################################
+resource "aws_security_group" "wordpress_test_sg" {
+  name        = "wordpress-test-sg"
   description = "Security group for WordPress test instance"
-  vpc_id      = module.network.vpc_id
+  vpc_id      = data.aws_vpc.existing.id
 
   ingress {
+    description = "Allow HTTP"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
   ingress {
+    description = "Allow HTTPS"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-
   ingress {
+    description = "Allow SSH"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["10.0.0.0/16"]
-  }
-
+  # Sortie illimitée
   egress {
+    description = "Allow all outbound"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -88,38 +79,35 @@ resource "aws_security_group" "wordpress_test" {
   }
 
   tags = {
-    Name        = "WP-SG-Test"
+    Name        = "wordpress-test-sg"
     Environment = var.environment
     Project     = var.project_name
   }
 }
 
-# Existing EIP
-data "aws_eip" "wordpress_test" {
-  id = "eipalloc-0933b219497dd6c15"
+############################################################
+# EC2 Instance (WordPress / K3s node)
+############################################################
+data "aws_ami" "ubuntu" {
+  most_recent = true
+  owners      = ["099720109477"] # Canonical (Ubuntu)
+
+  filter {
+    name   = "name"
+    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
+  }
 }
 
-# Data source pour le rôle IAM existant
-data "aws_iam_role" "ec2_secrets_manager_role" {
-  name = "EC2SecretsManagerRole"
-}
-
-# IAM Instance Profile pour EC2
-resource "aws_iam_instance_profile" "ec2_secrets_manager_profile" {
-  name = "ec2-secrets-manager-profile"
-  role = data.aws_iam_role.ec2_secrets_manager_role.name
-}
-
-# EC2 Instance (Correction pour SSH et connexion réseau)
 resource "aws_instance" "wordpress_test" {
-  ami                         = "ami-06e02ae7bdac6b938"
-  instance_type               = "t3.medium"
-  subnet_id                   = module.network.public_subnet_ids[0]
-  vpc_security_group_ids      = [aws_security_group.wordpress_test.id]
-  key_name                    = "test-aws-key-pair-new"
-  associate_public_ip_address = true
-  iam_instance_profile        = aws_iam_instance_profile.ec2_secrets_manager_profile.name
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  subnet_id              = data.aws_subnet.public.id  # Subnet existant
+  vpc_security_group_ids = [aws_security_group.wordpress_test_sg.id]
+  key_name               = var.key_name
 
+  associate_public_ip_address = true  # si c'est un subnet public
+
+  # Ex: user_data minimal pour SSH
   user_data = <<-EOF
               #!/bin/bash
               sudo apt update -y
@@ -129,7 +117,7 @@ resource "aws_instance" "wordpress_test" {
               EOF
 
   root_block_device {
-    volume_size           = 8
+    volume_size           = 10
     volume_type           = "gp3"
     delete_on_termination = true
   }
@@ -143,27 +131,45 @@ resource "aws_instance" "wordpress_test" {
   lifecycle {
     create_before_destroy = true
   }
-
-  depends_on = [
-    module.network,
-    aws_security_group.wordpress_test,
-    aws_iam_instance_profile.ec2_secrets_manager_profile
-  ]
 }
 
-# EIP Association
-resource "aws_eip_association" "wordpress_test" {
-  instance_id   = aws_instance.wordpress_test.id
-  allocation_id = data.aws_eip.wordpress_test.id
-  depends_on    = [aws_instance.wordpress_test]
-}
+############################################################
+# (Facultatif) Associer un EIP si besoin
+############################################################
+# data "aws_eip" "existing_eip" {
+#   id = "eipalloc-xxxxxxxxxxx"
+# }
 
-# RDS Security Group and Instance data sources
+# resource "aws_eip_association" "wordpress_eip" {
+#   instance_id   = aws_instance.wordpress_test.id
+#   allocation_id = data.aws_eip.existing_eip.id
+# }
+
+############################################################
+# Data source pour RDS existant, si besoin
+############################################################
 data "aws_security_group" "rds" {
-  id = "sg-00efe258e85b22a30"
+  id = var.existing_rds_sg_id  # ex: sg-00efe258e85b22a30
 }
 
-# Define the RDS instance data source
-data "aws_db_instance" "wordpress" {
-  db_instance_identifier = "wordpress-db"
+data "aws_db_instance" "rds" {
+  db_instance_identifier = var.existing_rds_id  # ex: "wordpress-db"
+}
+
+output "rds_endpoint" {
+  description = "Endpoint RDS existant"
+  value       = data.aws_db_instance.rds.endpoint
+}
+
+############################################################
+# Outputs standard
+############################################################
+output "instance_id" {
+  description = "ID of EC2"
+  value       = aws_instance.wordpress_test.id
+}
+
+output "public_ip" {
+  description = "Public IP of EC2"
+  value       = aws_instance.wordpress_test.public_ip
 }

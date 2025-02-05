@@ -1,4 +1,3 @@
-# environments/test/backend.tf
 terraform {
   backend "s3" {
     bucket         = "wordpress-mmustar-terraform-state"
