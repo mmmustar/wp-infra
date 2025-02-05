@@ -19,7 +19,7 @@ data "aws_vpc" "existing" {
 // Création d'un nouveau sous-réseau dédié aux instances EC2 dans le VPC existant
 resource "aws_subnet" "compute" {
   vpc_id                  = data.aws_vpc.existing.id
-  cidr_block              = "10.0.100.0/24"  # Doit être un sous-ensemble du VPC (10.0.0.0/16)
+  cidr_block              = "10.0.100.0/24"  # Doit être un sous-ensemble du VPC (par exemple, si le VPC est en 10.0.0.0/16)
   availability_zone       = "eu-west-3a"
   map_public_ip_on_launch = true
 
@@ -56,6 +56,14 @@ resource "aws_eip_association" "wordpress_eip_assoc" {
   allocation_id = "eipalloc-0933b219497dd6c15"  // Utilise l'EIP existante
 }
 
+// Récupération de l'EIP existante via un data source
+data "aws_eips" "wordpress" {
+  filter {
+    name   = "allocation-id"
+    values = ["eipalloc-0933b219497dd6c15"]
+  }
+}
+
 // Utilisation de la base de données RDS existante
 data "aws_db_instance" "wordpress" {
   db_instance_identifier = "wordpress-db"
@@ -72,4 +80,9 @@ output "instance_public_ip" {
 
 output "instance_id" {
   value = module.compute.instance_id
+}
+
+output "eip_public_ip" {
+  description = "Public IP of the associated existing EIP"
+  value       = data.aws_eips.wordpress.public_ips[0]
 }
