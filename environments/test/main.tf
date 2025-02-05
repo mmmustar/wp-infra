@@ -98,41 +98,6 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-resource "aws_instance" "wordpress_test" {
-  ami                    = data.aws_ami.ubuntu.id
-  instance_type          = var.instance_type
-  subnet_id              = data.aws_subnet.public.id  # Subnet existant
-  vpc_security_group_ids = [aws_security_group.wordpress_test_sg.id]
-  key_name               = var.key_name
-
-  associate_public_ip_address = true  # si c'est un subnet public
-
-  # Ex: user_data minimal pour SSH
-  user_data = <<-EOF
-              #!/bin/bash
-              sudo apt update -y
-              sudo apt install -y openssh-server
-              sudo systemctl enable ssh
-              sudo systemctl start ssh
-              EOF
-
-  root_block_device {
-    volume_size           = 10
-    volume_type           = "gp3"
-    delete_on_termination = true
-  }
-
-  tags = {
-    Name        = "WP-Instance-Test"
-    Environment = var.environment
-    Project     = var.project_name
-  }
-
-  lifecycle {
-    create_before_destroy = true
-  }
-}
-
 ############################################################
 # (Facultatif) Associer un EIP si besoin
 ############################################################
@@ -143,6 +108,7 @@ resource "aws_instance" "wordpress_test" {
 resource "aws_eip_association" "wordpress_eip_assoc" {
   allocation_id = "eipalloc-0933b219497dd6c15"
   instance_id   = module.compute.instance_id
+  depends_on    = [module.compute]
 }
 
 ############################################################
@@ -166,20 +132,21 @@ output "rds_endpoint" {
 ############################################################
 output "instance_id" {
   description = "ID of EC2"
-  value       = aws_instance.wordpress_test.id
+  value       = module.compute.instance_id
 }
 
 output "public_ip" {
   description = "Public IP of EC2"
-  value       = aws_instance.wordpress_test.public_ip
+  value       = module.compute.instance_public_ip
 }
 
-module "compute" {
-  source = "../../environments/modules/compute"
 
-  vpc_id        = var.existing_vpc_id
-  subnet_id     = var.existing_subnet_id
-  key_name      = var.key_name
-  environment   = var.environment
-  project_name  = var.project_name
+module "compute" {
+  source       = "../../environments/modules/compute"
+  vpc_id       = var.existing_vpc_id
+  subnet_id    = var.existing_subnet_id
+  key_name     = var.key_name
+  environment  = var.environment
+  project_name = var.project_name
+  instance_type = "t3.medium"
 }
