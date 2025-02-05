@@ -10,14 +10,23 @@ variable "project_name" {
 }
 
 variable "vpc_id" {
-  description = "VPC ID where the instances will be created"
+  description = "VPC ID where the EC2 instance will be created"
   type        = string
+  default     = "vpc-0385cddb5bd815883"
 }
 
 variable "subnet_id" {
-  description = "Subnet ID where the instances will be created"
+  description = "Subnet ID where the EC2 instance will be created"
   type        = string
+  default     = "subnet-085d8f8361978d689"
 }
+
+variable "security_group_id" {
+  description = "Security Group for the EC2 instance"
+  type        = string
+  default     = "sg-00efe258e85b22a30"
+}
+
 
 variable "instance_type" {
   description = "EC2 instance type"
