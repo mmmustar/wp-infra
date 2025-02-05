@@ -1,0 +1,51 @@
+---
+- hosts: wordpress
+  gather_facts: no
+  tasks:
+    - name: Check StorageClass status
+      shell: kubectl get storageclass
+      register: sc_status
+    
+    - name: Display StorageClass status
+      debug:
+        var: sc_status.stdout_lines
+
+    - name: Get StorageClass details
+      shell: kubectl describe storageclass ebs-sc
+      register: sc_details
+    
+    - name: Display StorageClass details
+      debug:
+        var: sc_details.stdout_lines
+
+    - name: Check PVC status
+      shell: kubectl get pvc -n wordpress
+      register: pvc_status
+    
+    - name: Display PVC status
+      debug:
+        var: pvc_status.stdout_lines
+
+    - name: Get PVC details
+      shell: kubectl describe pvc wp-pvc -n wordpress
+      register: pvc_details
+    
+    - name: Display PVC details
+      debug:
+        var: pvc_details.stdout_lines
+
+    - name: Check CSI driver pods
+      shell: kubectl get pods -n kube-system -l app.kubernetes.io/name=aws-ebs-csi-driver
+      register: csi_pods
+    
+    - name: Display CSI driver pod status
+      debug:
+        var: csi_pods.stdout_lines
+
+    - name: Get namespace events
+      shell: kubectl get events -n wordpress --sort-by='.lastTimestamp'
+      register: events
+    
+    - name: Display namespace events
+      debug:
+        var: events.stdout_lines

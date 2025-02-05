@@ -1,4 +1,5 @@
 ---
+# Configuration initiale
 - name: Ensure kubeconfig directory exists
   file:
     path: "{{ ansible_env.HOME }}/.kube"
@@ -16,6 +17,18 @@
   set_fact:
     kubeconfig: "{{ ansible_env.HOME }}/.kube/config"
 
+# Vérification préalable
+- name: Verify storage class exists
+  shell: kubectl get sc {{ storage_class_name }}
+  register: sc_check
+  ignore_errors: true
+
+- name: Fail if storage class doesn't exist
+  fail:
+    msg: "Storage class {{ storage_class_name }} not found"
+  when: sc_check.rc != 0
+
+# Création namespace et secrets
 - name: Create WordPress namespace
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
@@ -29,6 +42,7 @@
 - name: Include secrets tasks
   include_tasks: secrets.yml
 
+# Nettoyage des ressources existantes
 - name: Check if WordPress deployment exists
   kubernetes.core.k8s_info:
     kubeconfig: "{{ kubeconfig }}"
@@ -37,13 +51,16 @@
     namespace: "{{ wp_namespace }}"
   register: wp_deployment
 
-- name: Scale down WordPress deployment to 0 replicas if it exists
-  kubernetes.core.k8s_scale:
+- name: Delete existing deployment if it exists
+  kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
-    namespace: "{{ wp_namespace }}"
-    kind: Deployment
-    name: wordpress
-    replicas: 0
+    state: absent
+    definition:
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata:
+        name: wordpress
+        namespace: "{{ wp_namespace }}"
   when: wp_deployment.resources | length > 0
 
 - name: Wait for WordPress pods to be terminated
@@ -65,7 +82,8 @@
     name: wp-pvc
   ignore_errors: true
 
-- name: Create PVC and wait for binding
+# Création des ressources dans le bon ordre
+- name: Create PVC
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
     state: present
@@ -73,7 +91,7 @@
     namespace: "{{ wp_namespace }}"
   register: pvc_result
 
-- name: Create WordPress resources
+- name: Create ConfigMap and Secret
   kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
     state: present
@@ -82,31 +100,22 @@
   loop:
     - configmap.yaml.j2
     - secret.yaml.j2
-    - deployment.yaml.j2
-    - service.yaml.j2
 
-- name: Scale up WordPress deployment to desired replicas
-  kubernetes.core.k8s_scale:
+- name: Create WordPress service
+  kubernetes.core.k8s:
     kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: service.yaml.j2
     namespace: "{{ wp_namespace }}"
-    resource_definition:
-      apiVersion: apps/v1
-      kind: Deployment
-      metadata:
-        name: wordpress
-    replicas: "{{ wp_replicas }}"
 
-- name: Pause 30 seconds to allow pods to start and PVC binding
-  pause:
-    seconds: 30
+- name: Create WordPress deployment
+  kubernetes.core.k8s:
+    kubeconfig: "{{ kubeconfig }}"
+    state: present
+    template: deployment.yaml.j2
+    namespace: "{{ wp_namespace }}"
 
-- name: Include Ingress tasks
-  include_tasks: ingress.yml
-  tags:
-    - wordpress
-    - ingress
-
-- name: Wait for WordPress deployment
+- name: Wait for deployment to be ready
   kubernetes.core.k8s_info:
     kubeconfig: "{{ kubeconfig }}"
     kind: Deployment
@@ -114,9 +123,43 @@
     namespace: "{{ wp_namespace }}"
   register: wp_deployment
   until: wp_deployment.resources | length > 0 and wp_deployment.resources[0].status.availableReplicas is defined and wp_deployment.resources[0].status.availableReplicas > 0
-  retries: 15
+  retries: 30  # Augmenté pour donner plus de temps
   delay: 10
 
-- name: Display WordPress deployment status
+# Monitoring et débogage
+- name: Get pod status
+  shell: |
+    kubectl get pods -n {{ wp_namespace }} -o wide
+  register: pod_status
+  ignore_errors: true
+
+- name: Display pod status
   debug:
-    var: wp_deployment.resources[0].status
+    var: pod_status.stdout_lines
+
+- name: Get pod details
+  shell: |
+    kubectl describe pod -n {{ wp_namespace }} -l app=wordpress
+  register: pod_details
+  ignore_errors: true
+
+- name: Display pod details
+  debug:
+    var: pod_details.stdout_lines
+
+- name: Get pod logs
+  shell: |
+    kubectl logs -n {{ wp_namespace }} -l app=wordpress --tail=100
+  register: pod_logs
+  ignore_errors: true
+
+- name: Display pod logs
+  debug:
+    var: pod_logs.stdout_lines
+
+# Configuration finale
+- name: Include Ingress tasks
+  include_tasks: ingress.yml
+  tags:
+    - wordpress
+    - ingress
