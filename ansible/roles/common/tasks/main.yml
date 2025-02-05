@@ -1,17 +1,26 @@
-# roles/common/common/main.yml
+# roles/common/tasks/main.yml
 ---
 - block:
-    - name: Update package cache
-      apt:
-        update_cache: yes
-      become: true
+   - name: Update package cache
+     apt:
+       update_cache: yes
+     become: true
+   
+   - name: Install system packages
+     apt:
+       name:
+         - python3
+         - python3-pip
+         - git
+         - vim
+       state: present
+     become: true
 
-    - name: Install system packages
-      apt:
-        name:
-          - python3
-          - python3-pip
-          - git
-          - vim
-        state: present
-      become: true
+- name: Install boto3 and botocore locally
+  pip:
+   name: 
+     - boto3>=1.26.0
+     - botocore>=1.29.0
+   state: present
+  delegate_to: localhost
+  become: false
