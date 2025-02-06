@@ -11,6 +11,14 @@ variable "project_name" {
   type        = string
 }
 
+data "aws_secretsmanager_secret" "wp_secrets" {
+  name = "book"
+}
+
+data "aws_secretsmanager_secret_version" "wp_secrets" {
+  secret_id = data.aws_secretsmanager_secret.wp_secrets.id
+}
+
 // Récupération du VPC existant (WP-VPC)
 data "aws_vpc" "existing" {
   id = "vpc-0385cddb5bd815883"
@@ -85,4 +93,9 @@ output "instance_id" {
 output "eip_public_ip" {
   description = "Public IP of the associated existing EIP"
   value       = data.aws_eips.wordpress.public_ips[0]
+}
+
+output "wordpress_db_secrets" {
+  value = jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string)
+  sensitive = true
 }

@@ -1,12 +1,102 @@
 ---
-- name: Déployer l’infrastructure complète WordPress
+- name: Installer et configurer WordPress avec Nginx et PHP-FPM
   hosts: wordpress
   become: true
   gather_facts: true
-  vars:
-    ansible_pkg_mgr: apt
+
   roles:
     - common
     - docker
-    - k3s
+    - nginx
     - wordpress
+
+  tasks:
+    - name: Installer PHP et PHP-FPM
+      apt:
+        name:
+          - php-fpm
+          - php-mysql
+          - php-curl
+          - php-gd
+          - php-mbstring
+          - php-xml
+          - php-xmlrpc
+          - php-zip
+        state: present
+        update_cache: yes
+      notify: Redémarrer PHP-FPM
+
+    - name: Assurer le démarrage de PHP-FPM
+      service:
+        name: php7.4-fpm
+        state: started
+        enabled: yes
+
+    - name: Télécharger et installer WordPress
+      block:
+        - name: Télécharger WordPress
+          get_url:
+            url: https://wordpress.org/latest.tar.gz
+            dest: /tmp/wordpress.tar.gz
+
+        - name: Extraire WordPress
+          unarchive:
+            src: /tmp/wordpress.tar.gz
+            dest: /var/www/html
+            remote_src: yes
+
+        - name: Déplacer les fichiers WordPress avec rsync
+          command: rsync -av /var/www/html/wordpress/ /var/www/html/
+
+
+        - name: Supprimer l’archive et les fichiers inutiles
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /tmp/wordpress.tar.gz
+            - /var/www/html/wordpress
+
+        - name: Supprimer le dossier WordPress temporaire
+          file:
+            path: /var/www/html/wordpress
+            state: absent
+
+
+        - name: Définir les permissions de WordPress
+          file:
+            path: /var/www/html
+            owner: www-data
+            group: www-data
+            mode: '0755'
+            recurse: yes
+
+    - name: Configurer Nginx pour WordPress
+      template:
+        src: wordpress.conf.j2
+        dest: /etc/nginx/sites-available/wordpress
+      notify: Redémarrer Nginx
+
+    - name: Activer la configuration Nginx
+      file:
+        src: /etc/nginx/sites-available/wordpress
+        dest: /etc/nginx/sites-enabled/wordpress
+        state: link
+      notify: Redémarrer Nginx
+
+    - name: Supprimer la configuration Nginx par défaut
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Redémarrer Nginx
+
+  handlers:
+    - name: Redémarrer Nginx
+      service:
+        name: nginx
+        state: restarted
+
+    - name: Redémarrer PHP-FPM
+      service:
+        name: php7.4-fpm
+        state: restarted

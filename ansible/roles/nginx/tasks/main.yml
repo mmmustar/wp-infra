@@ -1,0 +1,36 @@
+---
+- name: Installer Nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+  become: true
+
+- name: Démarrer et activer Nginx
+  service:
+    name: nginx
+    state: started
+    enabled: yes
+  become: true
+
+- name: Copier le fichier de configuration Nginx
+  template:
+    src: wordpress.conf.j2
+    dest: "/etc/nginx/sites-available/wordpress"
+  notify: Redémarrer Nginx
+  become: true
+
+- name: Activer la configuration Nginx
+  file:
+    src: "{{ nginx_conf_path }}"
+    dest: "{{ nginx_conf_symlink }}"
+    state: link
+  notify: Redémarrer Nginx
+  become: true
+
+- name: Supprimer la configuration par défaut
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Redémarrer Nginx
+  become: true
