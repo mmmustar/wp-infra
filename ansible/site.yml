@@ -71,12 +71,6 @@
             mode: '0755'
             recurse: yes
 
-    - name: Configurer Nginx pour WordPress
-      template:
-        src: wordpress.conf.j2
-        dest: /etc/nginx/sites-available/wordpress
-      notify: Redémarrer Nginx
-
     - name: Activer la configuration Nginx
       file:
         src: /etc/nginx/sites-available/wordpress
