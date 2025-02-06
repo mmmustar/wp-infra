@@ -77,6 +77,11 @@ data "aws_db_instance" "wordpress" {
   db_instance_identifier = "wordpress-db"
 }
 
+resource "local_file" "secrets_json" {
+  content  = jsonencode(jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string))
+  filename = "${path.module}/secrets.json"
+}
+
 // Exports
 output "rds_endpoint" {
   value = data.aws_db_instance.wordpress.endpoint

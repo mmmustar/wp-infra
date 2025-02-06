@@ -24,3 +24,18 @@
    state: present
   delegate_to: localhost
   become: false
+
+- name: Vérifier la présence de get_secret.py sur le serveur
+  stat:
+    path: /usr/local/bin/get_secret.py
+  register: secret_script
+
+- name: Copier get_secret.py sur EC2 si absent
+  copy:
+    src: roles/common/files/get_secret.py
+    dest: /usr/local/bin/get_secret.py
+    owner: root
+    group: root
+    mode: '0755'
+  become: true
+  when: not secret_script.stat.exists

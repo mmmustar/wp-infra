@@ -1,37 +1,14 @@
-- name: Create WordPress data directory
+---
+- name: Inclure les tâches de récupération des secrets
+  include_tasks: secrets.yml
+
+- name: Créer le répertoire de données de WordPress
   file:
-   path: "{{ wp_volume_path }}"
-   state: directory
-   mode: '0755'
+    path: "{{ wp_volume_path }}"
+    state: directory
+    mode: '0755'
 
-- name: Get AWS secrets
-  block:
-   - name: Execute get_secret.py
-     script: roles/common/files/get_secret.py
-     register: secret_output
-     delegate_to: localhost
-     become: false
-     changed_when: false
-
-   - name: Parse JSON output and set WordPress variables
-     set_fact:
-       mysql_host: "{{ secret_output.stdout | from_json | json_query('MYSQL_HOST') }}" 
-       mysql_user: "{{ secret_output.stdout | from_json | json_query('MYSQL_USER') }}"
-       mysql_password: "{{ secret_output.stdout | from_json | json_query('MYSQL_PASSWORD') }}"
-       mysql_database: "{{ secret_output.stdout | from_json | json_query('MYSQL_DATABASE') }}"
-       mysql_port: "{{ secret_output.stdout | from_json | json_query('MYSQL_PORT') }}"
-       wp_id: "{{ secret_output.stdout | from_json | json_query('WP_ID') }}"
-       auth_key: "{{ secret_output.stdout | from_json | json_query('AUTH_KEY') }}"
-       secure_auth_key: "{{ secret_output.stdout | from_json | json_query('SECURE_AUTH_KEY') }}"
-       logged_in_key: "{{ secret_output.stdout | from_json | json_query('LOGGED_IN_KEY') }}"
-       nonce_key: "{{ secret_output.stdout | from_json | json_query('NONCE_KEY') }}"
-       auth_salt: "{{ secret_output.stdout | from_json | json_query('AUTH_SALT') }}"
-       secure_auth_salt: "{{ secret_output.stdout | from_json | json_query('SECURE_AUTH_SALT') }}"
-       logged_in_salt: "{{ secret_output.stdout | from_json | json_query('LOGGED_IN_SALT') }}"
-       nonce_salt: "{{ secret_output.stdout | from_json | json_query('NONCE_SALT') }}"
-     no_log: true
-
-- name: Create wp-config.php from template
+- name: Générer le fichier wp-config.php depuis le template
   template:
     src: wp-config.php.j2
     dest: "{{ wp_volume_path }}/wp-config.php"
@@ -40,18 +17,27 @@
     mode: '0644'
   notify: Restart PHP-FPM
 
-- name: Create WordPress container
+- name: Démarrer le conteneur WordPress
   community.docker.docker_container:
-   name: wordpress
-   image: "{{ wordpress_image }}"
-   state: started
-   restart_policy: always
-   published_ports:
-     - "{{ wordpress_port }}:80"
-   env:
-     WORDPRESS_DB_HOST: "{{ mysql_host }}:{{ mysql_port }}"
-     WORDPRESS_DB_USER: "{{ mysql_user }}"
-     WORDPRESS_DB_PASSWORD: "{{ mysql_password }}"
-     WORDPRESS_DB_NAME: "{{ mysql_database }}"
-   volumes:
-     - "{{ wp_volume_path }}:/var/www/html"
+    name: wordpress
+    image: "{{ wordpress_image }}"
+    state: started
+    restart_policy: always
+    published_ports:
+      - "{{ wordpress_port }}:80"
+    env:
+      WORDPRESS_DB_HOST: "{{ mysql_host }}:{{ mysql_port }}"
+      WORDPRESS_DB_USER: "{{ mysql_user }}"
+      WORDPRESS_DB_PASSWORD: "{{ mysql_password }}"
+      WORDPRESS_DB_NAME: "{{ mysql_database }}"
+      WP_ID: "{{ wp_id }}"
+      AUTH_KEY: "{{ auth_key }}"
+      SECURE_AUTH_KEY: "{{ secure_auth_key }}"
+      LOGGED_IN_KEY: "{{ logged_in_key }}"
+      NONCE_KEY: "{{ nonce_key }}"
+      AUTH_SALT: "{{ auth_salt }}"
+      SECURE_AUTH_SALT: "{{ secure_auth_salt }}"
+      LOGGED_IN_SALT: "{{ logged_in_salt }}"
+      NONCE_SALT: "{{ nonce_salt }}"
+    volumes:
+      - "{{ wp_volume_path }}:/var/www/html"
