@@ -31,3 +31,4 @@ terraform.rc
 .idea/
 
 repomix-output.txt
+vault.yml
