@@ -1,4 +1,3 @@
----
 - name: Create WordPress data directory
   file:
    path: "{{ wp_volume_path }}"
@@ -21,7 +20,25 @@
        mysql_password: "{{ secret_output.stdout | from_json | json_query('MYSQL_PASSWORD') }}"
        mysql_database: "{{ secret_output.stdout | from_json | json_query('MYSQL_DATABASE') }}"
        mysql_port: "{{ secret_output.stdout | from_json | json_query('MYSQL_PORT') }}"
+       wp_id: "{{ secret_output.stdout | from_json | json_query('WP_ID') }}"
+       auth_key: "{{ secret_output.stdout | from_json | json_query('AUTH_KEY') }}"
+       secure_auth_key: "{{ secret_output.stdout | from_json | json_query('SECURE_AUTH_KEY') }}"
+       logged_in_key: "{{ secret_output.stdout | from_json | json_query('LOGGED_IN_KEY') }}"
+       nonce_key: "{{ secret_output.stdout | from_json | json_query('NONCE_KEY') }}"
+       auth_salt: "{{ secret_output.stdout | from_json | json_query('AUTH_SALT') }}"
+       secure_auth_salt: "{{ secret_output.stdout | from_json | json_query('SECURE_AUTH_SALT') }}"
+       logged_in_salt: "{{ secret_output.stdout | from_json | json_query('LOGGED_IN_SALT') }}"
+       nonce_salt: "{{ secret_output.stdout | from_json | json_query('NONCE_SALT') }}"
      no_log: true
+
+- name: Create wp-config.php from template
+  template:
+    src: wp-config.php.j2
+    dest: "{{ wp_volume_path }}/wp-config.php"
+    owner: www-data
+    group: www-data
+    mode: '0644'
+  notify: Restart PHP-FPM
 
 - name: Create WordPress container
   community.docker.docker_container:
