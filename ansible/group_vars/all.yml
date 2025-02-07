@@ -27,3 +27,4 @@ wordpress_auth_salt: "{{ lookup('env', 'AUTH_SALT') }}"
 wordpress_secure_auth_salt: "{{ lookup('env', 'SECURE_AUTH_SALT') }}"
 wordpress_logged_in_salt: "{{ lookup('env', 'LOGGED_IN_SALT') }}"
 wordpress_nonce_salt: "{{ lookup('env', 'NONCE_SALT') }}"
+#cool
