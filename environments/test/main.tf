@@ -1,11 +1,6 @@
-terraform {
-  backend "s3" {}  # Assure-toi que ce fichier ne duplique pas backend.tf
-}
-
-# 🔹 Sélection de l'AMI Ubuntu 20.04 LTS
 data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["099720109477"]  # Canonical
+  owners      = ["099720109477"]  // Canonical
   filter {
     name   = "name"
     values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
@@ -22,7 +17,8 @@ module "compute" {
   security_group_id = var.security_group_id
   instance_type     = var.instance_type
   key_name          = var.key_name
-  ami_id            = data.aws_ami.ubuntu.id  # ✅ Correction
+  ami_id            = data.aws_ami.ubuntu.id  
+  aws_account_id    = "730335289383"
 }
 
 # 🔹 Outputs
