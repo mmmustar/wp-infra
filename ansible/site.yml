@@ -24,25 +24,22 @@
       args:
         creates: /usr/local/bin/helm
 
-    - name: Vérifier l'installation de Helm
-      command: helm version
-      register: helm_version
-      changed_when: false
+    - name: Installer Boto3 et Botocore
+      pip:
+        name: 
+          - boto3
+          - botocore
+        state: present
 
-    - name: Afficher la version de Helm
-      debug:
-        msg: "{{ helm_version.stdout_lines }}"
-
-    - name: Récupérer les secrets depuis AWS Secrets Manager
-      shell: |
-        aws secretsmanager get-secret-value --secret-id book --query SecretString --output text
-      register: aws_secrets
-
-    - name: Stocker les credentials de la base de données
+    - name: Récupérer les secrets AWS via Boto3
       set_fact:
-        wp_db_user: "{{ aws_secrets.stdout | from_json | json_query('MYSQL_USER') }}"
-        wp_db_password: "{{ aws_secrets.stdout | from_json | json_query('MYSQL_PASSWORD') }}"
-        wp_db_name: "{{ aws_secrets.stdout | from_json | json_query('MYSQL_DATABASE') }}"
+        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'book', region='eu-west-3') }}"
+
+    - name: Extraire les variables des secrets
+      set_fact:
+        wp_db_user: "{{ aws_secrets.MYSQL_USER }}"
+        wp_db_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        wp_db_name: "{{ aws_secrets.MYSQL_DATABASE }}"
 
     - name: Créer un secret Kubernetes pour WordPress
       shell: |
@@ -74,4 +71,3 @@
     - name: Afficher les pods WordPress
       debug:
         msg: "{{ wordpress_pods.stdout_lines }}"
-
