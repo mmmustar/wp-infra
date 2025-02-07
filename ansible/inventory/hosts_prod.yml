@@ -1,0 +1,9 @@
+"all":
+  "children":
+    "wordpress":
+      "hosts":
+        "wp-prod":
+          "ansible_host": "35.181.234.232"
+          "ansible_python_interpreter": "/usr/bin/python3"
+          "ansible_ssh_private_key_file": "~/.ssh/test-aws-key-pair-new.pem"
+          "ansible_user": "ubuntu"
