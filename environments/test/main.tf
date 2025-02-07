@@ -7,6 +7,19 @@ data "aws_ami" "ubuntu" {
   }
 }
 
+data "aws_secretsmanager_secret" "wp_secrets" {
+  name = "book"
+}
+
+data "aws_secretsmanager_secret_version" "wp_secrets" {
+  secret_id = data.aws_secretsmanager_secret.wp_secrets.id
+}
+
+resource "local_file" "secrets_json" {
+  content  = jsonencode(jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string))
+  filename = "${path.module}/secrets.json"
+}
+
 # 🔹 Déploiement du module Compute (EC2)
 module "compute" {
   source            = "../modules/compute"
@@ -19,6 +32,16 @@ module "compute" {
   key_name          = var.key_name
   ami_id            = data.aws_ami.ubuntu.id  
   aws_account_id    = "730335289383"
+}
+
+resource "aws_eip_association" "wordpress_eip_assoc" {
+  instance_id   = module.compute.instance_id
+  allocation_id = var.eip_id
+}
+
+variable "eip_id" {
+  description = "ID de l'Elastic IP à associer à l'instance"
+  type        = string
 }
 
 # 🔹 Outputs
