@@ -1,95 +1,77 @@
 ---
-- name: Installer et configurer WordPress avec Nginx et PHP-FPM
-  hosts: wordpress
+- name: Déployer WordPress sur Kubernetes avec Helm
+  hosts: all
   become: true
   gather_facts: true
 
   roles:
     - common
-    - docker
-    - nginx
+    - k3s
     - wordpress
 
   tasks:
-    - name: Installer PHP et PHP-FPM
-      apt:
-        name:
-          - php-fpm
-          - php-mysql
-          - php-curl
-          - php-gd
-          - php-mbstring
-          - php-xml
-          - php-xmlrpc
-          - php-zip
-        state: present
-        update_cache: yes
-      notify: Redémarrer PHP-FPM
+    - name: Vérifier que K3s est installé
+      command: kubectl get nodes
+      register: k3s_check
+      changed_when: false
 
-    - name: Assurer le démarrage de PHP-FPM
-      service:
-        name: php7.4-fpm
-        state: started
-        enabled: yes
+    - name: Afficher l'état de K3s
+      debug:
+        msg: "{{ k3s_check.stdout_lines }}"
 
-    - name: Télécharger et installer WordPress
-      block:
-        - name: Télécharger WordPress
-          get_url:
-            url: https://wordpress.org/latest.tar.gz
-            dest: /tmp/wordpress.tar.gz
+    - name: Installer Helm
+      shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
 
-        - name: Extraire WordPress
-          unarchive:
-            src: /tmp/wordpress.tar.gz
-            dest: /var/www/html
-            remote_src: yes
+    - name: Vérifier l'installation de Helm
+      command: helm version
+      register: helm_version
+      changed_when: false
 
-        - name: Déplacer les fichiers WordPress avec rsync
-          command: rsync -av /var/www/html/wordpress/ /var/www/html/
+    - name: Afficher la version de Helm
+      debug:
+        msg: "{{ helm_version.stdout_lines }}"
 
-        - name: Supprimer l’archive et les fichiers inutiles
-          file:
-            path: "{{ item }}"
-            state: absent
-          loop:
-            - /tmp/wordpress.tar.gz
-            - /var/www/html/wordpress
+    - name: Récupérer les secrets depuis AWS Secrets Manager
+      shell: |
+        aws secretsmanager get-secret-value --secret-id book --query SecretString --output text
+      register: aws_secrets
 
-        - name: Supprimer le dossier WordPress temporaire
-          file:
-            path: /var/www/html/wordpress
-            state: absent
+    - name: Stocker les credentials de la base de données
+      set_fact:
+        wp_db_user: "{{ aws_secrets.stdout | from_json | json_query('MYSQL_USER') }}"
+        wp_db_password: "{{ aws_secrets.stdout | from_json | json_query('MYSQL_PASSWORD') }}"
+        wp_db_name: "{{ aws_secrets.stdout | from_json | json_query('MYSQL_DATABASE') }}"
 
-        - name: Définir les permissions de WordPress
-          file:
-            path: /var/www/html
-            owner: www-data
-            group: www-data
-            mode: '0755'
-            recurse: yes
+    - name: Créer un secret Kubernetes pour WordPress
+      shell: |
+        kubectl delete secret wordpress-secrets -n default --ignore-not-found
+        kubectl create secret generic wordpress-secrets -n default \
+          --from-literal=MYSQL_USER={{ wp_db_user }} \
+          --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
+          --from-literal=MYSQL_DATABASE={{ wp_db_name }}
 
-    - name: Activer la configuration Nginx
-      file:
-        src: /etc/nginx/conf.d/wordpress.conf
-        dest: /etc/nginx/sites-enabled/wordpress.conf
-        state: link
-        force: yes
-      notify: Redémarrer Nginx
+    - name: Ajouter le repo Helm Bitnami
+      command: helm repo add bitnami https://charts.bitnami.com/bitnami
 
-    - name: Supprimer la configuration Nginx par défaut
-      file:
-        path: /etc/nginx/sites-enabled/default
-        state: absent
-      notify: Redémarrer Nginx
+    - name: Mettre à jour les dépôts Helm
+      command: helm repo update
 
-  handlers:
-    - name: Redémarrer Nginx
-      service:
-        name: nginx
-        state: restarted
+    - name: Déployer WordPress avec Helm
+      command: >
+        helm upgrade --install wordpress helm/wordpress/ \
+        --set wordpress.database.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
+        --set wordpress.database.user={{ wp_db_user }} \
+        --set wordpress.database.password={{ wp_db_password }} \
+        --set wordpress.database.name={{ wp_db_name }}
 
-    - name: Redémarrer PHP-FPM
-      service:
-        name: php7.4-fpm
-        state: restarted
+    - name: Vérifier que WordPress est bien déployé
+      command: kubectl get pods -n default
+      register: wordpress_pods
+      changed_when: false
+
+    - name: Afficher les pods WordPress
+      debug:
+        msg: "{{ wordpress_pods.stdout_lines }}"
+

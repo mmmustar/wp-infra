@@ -1,4 +1,0 @@
----
-nginx_conf_path: "/etc/nginx/sites-available/wordpress"
-nginx_conf_symlink: "/etc/nginx/sites-enabled/wordpress"
-nginx_root_path: "/var/www/html"

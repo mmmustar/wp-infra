@@ -1,4 +1,0 @@
-# roles/docker/defaults/main.yml
----
-docker_users:
-  - "{{ ansible_user }}"
