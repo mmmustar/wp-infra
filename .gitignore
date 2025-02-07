@@ -32,4 +32,4 @@ terraform.rc
 
 repomix-output.txt
 vault.yml
-secrets.json
+secrets.jsonrepomix-output.txt
