@@ -1,6 +1,11 @@
+# ansible/roles/nginx/templates/wordpress.conf.j2
 server {
     listen 80;
+    {% if environment == "prod" %}
+    server_name mmustar.fr;
+    {% else %}
     server_name test.mmustar.fr;
+    {% endif %}
 
     root /var/www/html;
     index index.php index.html index.htm;
@@ -11,7 +16,7 @@ server {
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php7.4-fpm.sock; # Vérifie la version PHP installée
+        fastcgi_pass unix:/run/php/php7.4-fpm.sock;
         fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
         include fastcgi_params;
     }
