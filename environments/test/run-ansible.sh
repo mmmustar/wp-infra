@@ -45,3 +45,4 @@ cd "$ANSIBLE_DIR" || exit 1
 
 echo "🔧 Exécution d'Ansible..."
 ansible-playbook -i inventory/hosts.yml site.yml
+#cool
