@@ -1,5 +1,25 @@
+# roles/k3s/tasks/main.yml
+
 - name: Télécharger et installer K3s
   shell: curl -sfL https://get.k3s.io | sh -
+
+- name: Configurer K3s avec --write-kubeconfig-mode
+  ansible.builtin.lineinfile:
+   path: /etc/systemd/system/k3s.service
+   regexp: '^ExecStart=/usr/local/bin/k3s'
+   line: 'ExecStart=/usr/local/bin/k3s server --write-kubeconfig-mode 644'
+
+- name: Redémarrer K3s
+  systemd:
+   name: k3s
+   state: restarted
+   daemon_reload: yes
+
+- name: Attendre que K3s soit prêt
+  wait_for:
+   path: /etc/rancher/k3s/k3s.yaml
+   state: present
+   timeout: 60
 
 - name: Vérifier que K3s est installé
   command: k3s kubectl get nodes
@@ -8,9 +28,9 @@
 
 - name: Afficher le statut de K3s
   debug:
-    msg: "{{ k3s_output.stdout_lines }}"
+   msg: "{{ k3s_output.stdout_lines }}"
 
 - name: Installer Helm
   shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
-    creates: /usr/local/bin/helm
+   creates: /usr/local/bin/helm
