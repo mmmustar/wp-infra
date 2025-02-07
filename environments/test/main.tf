@@ -51,3 +51,4 @@ output "instance_public_ip" {
   description = "Adresse IP publique de l'EC2"
   value       = aws_instance.wordpress.public_ip
 }
+#cool
