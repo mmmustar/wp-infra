@@ -22,10 +22,9 @@ $table_prefix = 'wp_';
 // Mode débogage WordPress
 define('WP_DEBUG', false);
 
-if (!defined('ABSPATH')) {
+if ( !defined('ABSPATH') ) {
     define('ABSPATH', dirname(__FILE__) . '/');
 }
 
-// Inclusion des fichiers WordPress
 require_once(ABSPATH . 'wp-settings.php');
 ?>

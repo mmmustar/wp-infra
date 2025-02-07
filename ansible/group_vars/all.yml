@@ -8,3 +8,22 @@ aws_region: "eu-west-3"
 nginx_conf_path: "/etc/nginx/sites-available/wordpress"
 nginx_conf_symlink: "/etc/nginx/sites-enabled/wordpress"
 wordpress_site_url: "http://test.mmustar.fr"
+wordpress_secret_name: "book"
+wordpress_port: 8080
+wordpress_image: wordpress:latest
+wp_volume_path: /data/wordpress
+
+# Secrets via variables d'environnement
+wordpress_db_host: "{{ lookup('env', 'WORDPRESS_DB_HOST') }}"
+wordpress_db_user: "{{ lookup('env', 'WORDPRESS_DB_USER') }}"
+wordpress_db_password: "{{ lookup('env', 'WORDPRESS_DB_PASSWORD') }}"
+wordpress_db_name: "{{ lookup('env', 'WORDPRESS_DB_NAME') }}"
+wordpress_wp_id: "{{ lookup('env', 'WP_ID') }}"
+wordpress_auth_key: "{{ lookup('env', 'AUTH_KEY') }}"
+wordpress_secure_auth_key: "{{ lookup('env', 'SECURE_AUTH_KEY') }}"
+wordpress_logged_in_key: "{{ lookup('env', 'LOGGED_IN_KEY') }}"
+wordpress_nonce_key: "{{ lookup('env', 'NONCE_KEY') }}"
+wordpress_auth_salt: "{{ lookup('env', 'AUTH_SALT') }}"
+wordpress_secure_auth_salt: "{{ lookup('env', 'SECURE_AUTH_SALT') }}"
+wordpress_logged_in_salt: "{{ lookup('env', 'LOGGED_IN_SALT') }}"
+wordpress_nonce_salt: "{{ lookup('env', 'NONCE_SALT') }}"

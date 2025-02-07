@@ -48,7 +48,6 @@
         - name: Déplacer les fichiers WordPress avec rsync
           command: rsync -av /var/www/html/wordpress/ /var/www/html/
 
-
         - name: Supprimer l’archive et les fichiers inutiles
           file:
             path: "{{ item }}"
@@ -62,7 +61,6 @@
             path: /var/www/html/wordpress
             state: absent
 
-
         - name: Définir les permissions de WordPress
           file:
             path: /var/www/html
@@ -73,9 +71,10 @@
 
     - name: Activer la configuration Nginx
       file:
-        src: /etc/nginx/sites-available/wordpress
-        dest: /etc/nginx/sites-enabled/wordpress
+        src: /etc/nginx/conf.d/wordpress.conf
+        dest: /etc/nginx/sites-enabled/wordpress.conf
         state: link
+        force: yes
       notify: Redémarrer Nginx
 
     - name: Supprimer la configuration Nginx par défaut
