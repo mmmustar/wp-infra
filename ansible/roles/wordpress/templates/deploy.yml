@@ -1,0 +1,17 @@
+- name: Copier le fichier service.yaml sur l'instance
+  template:
+    src: service.yaml.j2
+    dest: /tmp/service.yaml
+
+- name: Appliquer le service NodePort
+  command: kubectl apply -f /tmp/service.yaml
+  become: yes
+
+- name: Copier le fichier ingress.yaml sur l'instance
+  template:
+    src: ingress.yaml.j2
+    dest: /tmp/ingress.yaml
+
+- name: Appliquer l'Ingress Traefik
+  command: kubectl apply -f /tmp/ingress.yaml
+  become: yes
