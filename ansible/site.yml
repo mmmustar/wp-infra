@@ -89,14 +89,19 @@
 
    - name: Déployer WordPress avec Helm
      command: >
-       helm upgrade --install wordpress bitnami/wordpress \
-       --set mariadb.enabled=false \
-       --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
-       --set externalDatabase.user={{ wp_db_user }} \
-       --set externalDatabase.password={{ wp_db_password }} \
-       --set externalDatabase.database={{ wp_db_name }} \
-       --set externalDatabase.port=3306
+        helm upgrade --install wordpress bitnami/wordpress \
+        --set mariadb.enabled=false \
+        --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
+        --set externalDatabase.user={{ wp_db_user }} \
+        --set externalDatabase.password={{ wp_db_password }} \
+        --set externalDatabase.database={{ wp_db_name }} \
+        --set externalDatabase.port=3306 \
+        --set service.type=NodePort \
+        --set service.nodePorts.http=30080 
+        --set service.nodePorts.https=30443
+        --set wordpressHost=test.mmustar.fr
      become_user: ubuntu
+
 
    - name: Vérifier que WordPress est bien déployé
      command: kubectl get pods -n default
