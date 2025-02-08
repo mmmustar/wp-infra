@@ -15,3 +15,21 @@
 - name: Appliquer l'Ingress Traefik
   command: kubectl apply -f /tmp/ingress.yaml
   become: yes
+
+- name: Déployer WordPress avec Helm et CSI Driver
+  command: >
+    helm upgrade --install wordpress bitnami/wordpress
+    --set mariadb.enabled=false
+    --set externalDatabase.host={{ wordpress_db_host }}
+    --set externalDatabase.user={{ wordpress_db_user }}
+    --set externalDatabase.password={{ wordpress_db_password }}
+    --set externalDatabase.database={{ wordpress_db_name }}
+    --set persistence.enabled=true
+    --set persistence.storageClass=aws-secrets
+    --set extraVolumes[0].name=aws-secrets
+    --set extraVolumes[0].csi.driver=secrets-store.csi.k8s.io
+    --set extraVolumes[0].csi.readOnly=true
+    --set extraVolumes[0].csi.volumeAttributes.secretProviderClass=wordpress-aws-secrets
+    --set extraVolumeMounts[0].name=aws-secrets
+    --set extraVolumeMounts[0].mountPath=/mnt/secrets-store
+    --set extraVolumeMounts[0].readOnly=true

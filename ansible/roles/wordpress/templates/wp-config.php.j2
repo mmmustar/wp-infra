@@ -1,21 +1,24 @@
 <?php
+// ** Récupération des secrets depuis le fichier monté par CSI Driver ** //
+$secrets = json_decode(file_get_contents('/mnt/secrets-store/book'), true);
+
 // ** Paramètres de connexion à la base de données ** //
-define('DB_NAME', '{{ mysql_database }}');
-define('DB_USER', '{{ mysql_user }}');
-define('DB_PASSWORD', '{{ mysql_password }}');
-define('DB_HOST', '{{ mysql_host }}:{{ mysql_port }}');
+define('DB_NAME', $secrets['MYSQL_DATABASE']);
+define('DB_USER', $secrets['MYSQL_USER']);
+define('DB_PASSWORD', $secrets['MYSQL_PASSWORD']);
+define('DB_HOST', $secrets['MYSQL_HOST'] . ':' . $secrets['MYSQL_PORT']);
 define('DB_CHARSET', 'utf8');
 define('DB_COLLATE', '');
 
 // ** Clés d'authentification WordPress ** //
-define('AUTH_KEY',         '{{ auth_key }}');
-define('SECURE_AUTH_KEY',  '{{ secure_auth_key }}');
-define('LOGGED_IN_KEY',    '{{ logged_in_key }}');
-define('NONCE_KEY',        '{{ nonce_key }}');
-define('AUTH_SALT',        '{{ auth_salt }}');
-define('SECURE_AUTH_SALT', '{{ secure_auth_salt }}');
-define('LOGGED_IN_SALT',   '{{ logged_in_salt }}');
-define('NONCE_SALT',       '{{ nonce_salt }}');
+define('AUTH_KEY', $secrets['AUTH_KEY']);
+define('SECURE_AUTH_KEY', $secrets['SECURE_AUTH_KEY']);
+define('LOGGED_IN_KEY', $secrets['LOGGED_IN_KEY']);
+define('NONCE_KEY', $secrets['NONCE_KEY']);
+define('AUTH_SALT', $secrets['AUTH_SALT']);
+define('SECURE_AUTH_SALT', $secrets['SECURE_AUTH_SALT']);
+define('LOGGED_IN_SALT', $secrets['LOGGED_IN_SALT']);
+define('NONCE_SALT', $secrets['NONCE_SALT']);
 
 $table_prefix = 'wp_';
 

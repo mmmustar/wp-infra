@@ -1,25 +1,27 @@
-# roles/k3s/tasks/main.yml
+# Installation et configuration de K3s
 
 - name: Télécharger et installer K3s
   shell: curl -sfL https://get.k3s.io | sh -
-
-- name: Configurer K3s avec --write-kubeconfig-mode
-  ansible.builtin.lineinfile:
-   path: /etc/systemd/system/k3s.service
-   regexp: '^ExecStart=/usr/local/bin/k3s'
-   line: 'ExecStart=/usr/local/bin/k3s server --write-kubeconfig-mode 644'
-
-- name: Redémarrer K3s
-  systemd:
-   name: k3s
-   state: restarted
-   daemon_reload: yes
+  args:
+    creates: /usr/local/bin/k3s
 
 - name: Attendre que K3s soit prêt
   wait_for:
-   path: /etc/rancher/k3s/k3s.yaml
-   state: present
-   timeout: 60
+    path: /etc/rancher/k3s/k3s.yaml
+    state: present
+    timeout: 60
+
+- name: Configurer K3s avec --write-kubeconfig-mode
+  ansible.builtin.lineinfile:
+    path: /etc/systemd/system/k3s.service
+    regexp: '^ExecStart=/usr/local/bin/k3s'
+    line: 'ExecStart=/usr/local/bin/k3s server --write-kubeconfig-mode 644'
+
+- name: Redémarrer K3s
+  systemd:
+    name: k3s
+    state: restarted
+    daemon_reload: yes
 
 - name: Vérifier que K3s est installé
   command: k3s kubectl get nodes
@@ -28,9 +30,48 @@
 
 - name: Afficher le statut de K3s
   debug:
-   msg: "{{ k3s_output.stdout_lines }}"
+    msg: "{{ k3s_output.stdout_lines }}"
 
-- name: Installer Helm
+# Installation et configuration de kubectl
+
+- name: Vérifier si kubectl est installé
+  command: kubectl version --client
+  register: kubectl_installed
+  ignore_errors: true
+
+- name: Installer kubectl si absent
+  shell: |
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    mv kubectl /usr/local/bin/
+  when: kubectl_installed.rc != 0
+
+- name: Vérifier que kubectl est bien installé
+  command: kubectl version --client
+  register: kubectl_check
+  changed_when: false
+
+- debug:
+    msg: "kubectl est installé : {{ kubectl_check.stdout_lines }}"
+
+# Installation du CSI Driver Secrets Store
+
+- name: Installer le CSI Driver Secrets Store
+  shell: |
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/deploy/rbac-secretproviderclass.yaml
+    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/deploy/secrets-store-csi-driver.yaml
+  register: csi_installation
+  changed_when: "'created' in csi_installation.stdout or 'configured' in csi_installation.stdout"
+
+# Installation et configuration de Helm
+
+- name: Vérifier si Helm est installé
+  command: helm version
+  register: helm_installed
+  ignore_errors: true
+
+- name: Installer Helm si absent
   shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
-   creates: /usr/local/bin/helm
+    creates: /usr/local/bin/helm
+  when: helm_installed.rc != 0
