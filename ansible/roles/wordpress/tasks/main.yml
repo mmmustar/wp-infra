@@ -1,27 +1,57 @@
+# ansible/roles/wordpress/tasks/main.yml
 ---
 - name: Include tasks to fetch secrets
   include_tasks: secrets.yml
 
-- name: Create WordPress data directory
+- name: Create required directories
   file:
-    path: "{{ wp_volume_path }}"
+    path: "{{ item }}"
     state: directory
     mode: '0755'
+  with_items:
+    - "{{ wp_volume_path }}"
+    - "/tmp/kubernetes"
 
-- name: Start the WordPress container
-  community.docker.docker_container:
+- name: Copy Kubernetes manifests
+  template:
+    src: "{{ item }}"
+    dest: "/tmp/kubernetes/{{ item | basename | regex_replace('.j2$', '') }}"
+  with_fileglob:
+    - "../templates/*.j2"
+
+- name: Add Bitnami repo
+  kubernetes.core.helm_repository:
+    name: bitnami
+    repo_url: https://charts.bitnami.com/bitnami
+
+- name: Deploy WordPress
+  kubernetes.core.helm:
     name: wordpress
-    image: "{{ wordpress_image }}"
-    state: started
-    restart_policy: always
-    published_ports:
-      - "80:80"
-    env:
-      WORDPRESS_DB_HOST: "{{ wordpress_db_host }}"
-      WORDPRESS_DB_USER: "{{ wordpress_db_user }}"
-      WORDPRESS_DB_PASSWORD: "{{ wordpress_db_password }}"
-      WORDPRESS_DB_NAME: "{{ wordpress_db_name }}"
-    volumes:
-      - "{{ wp_volume_path }}:/var/www/html"
+    chart_ref: bitnami/wordpress
+    release_namespace: default
+    create_namespace: true
+    values:
+      mariadb:
+        enabled: false
+      externalDatabase:
+        host: "{{ wordpress_db_host }}"
+        user: "{{ wordpress_db_user }}"
+        password: "{{ wordpress_db_password }}"
+        database: "{{ wordpress_db_name }}"
+        port: 3306
+      service:
+        type: NodePort
+        nodePorts:
+          http: 30080
+      persistence:
+        enabled: true
+        size: 10Gi
+      wordpressHost: "{{ 'test.mmustar.fr' if environment == 'test' else 'mmustar.fr' }}"
 
-      #cool
+- name: Apply additional manifests
+  kubernetes.core.k8s:
+    state: present
+    src: "/tmp/kubernetes/{{ item }}"
+  with_items:
+    - ingress.yaml
+    - aws-secrets.yml

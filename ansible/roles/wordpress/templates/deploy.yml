@@ -1,22 +1,20 @@
-- name: Copier le fichier service.yaml sur l'instance
+- name: Copy K8s manifests
   template:
-    src: service.yaml.j2
-    dest: /tmp/service.yaml
+    src: "{{ item }}.j2"
+    dest: "/tmp/{{ item }}"
+  with_items:
+    - service.yaml
+    - ingress.yaml
+    - aws-secrets.yml
 
-- name: Appliquer le service NodePort
-  command: kubectl apply -f /tmp/service.yaml
-  become: yes
+- name: Apply K8s manifests
+  command: kubectl apply -f "/tmp/{{ item }}"
+  with_items:
+    - service.yaml
+    - ingress.yaml
+    - aws-secrets.yml
 
-- name: Copier le fichier ingress.yaml sur l'instance
-  template:
-    src: ingress.yaml.j2
-    dest: /tmp/ingress.yaml
-
-- name: Appliquer l'Ingress Traefik
-  command: kubectl apply -f /tmp/ingress.yaml
-  become: yes
-
-- name: Déployer WordPress avec Helm et CSI Driver
+- name: Deploy WordPress with Helm
   command: >
     helm upgrade --install wordpress bitnami/wordpress
     --set mariadb.enabled=false
@@ -24,12 +22,6 @@
     --set externalDatabase.user={{ wordpress_db_user }}
     --set externalDatabase.password={{ wordpress_db_password }}
     --set externalDatabase.database={{ wordpress_db_name }}
-    --set persistence.enabled=true
-    --set persistence.storageClass=aws-secrets
-    --set extraVolumes[0].name=aws-secrets
-    --set extraVolumes[0].csi.driver=secrets-store.csi.k8s.io
-    --set extraVolumes[0].csi.readOnly=true
-    --set extraVolumes[0].csi.volumeAttributes.secretProviderClass=wordpress-aws-secrets
-    --set extraVolumeMounts[0].name=aws-secrets
-    --set extraVolumeMounts[0].mountPath=/mnt/secrets-store
-    --set extraVolumeMounts[0].readOnly=true
+    --set service.type=NodePort
+    --set service.nodePorts.http=30080
+    --set wordpressHost={% if environment == 'prod' %}mmustar.fr{% else %}test.mmustar.fr{% endif %}

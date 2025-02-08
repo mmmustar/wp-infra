@@ -1,51 +1,109 @@
-- name: Télécharger et installer K3s
-  shell: curl -sfL https://get.k3s.io | sh -
+# ansible/roles/k3s/tasks/main.yml
+---
+- name: Install K3s
+  shell: |
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -s - \
+      --disable servicelb \
+      --disable traefik
   args:
     creates: /usr/local/bin/k3s
   become: true
 
-- name: Attendre que K3s soit prêt
+- name: Wait for k3s to be ready
   wait_for:
     path: /etc/rancher/k3s/k3s.yaml
     state: present
     timeout: 60
+
+- name: Fix k3s permissions
+  block:
+    - name: Ensure k3s directory exists
+      file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: '0755'
+      become: true
+
+    - name: Set k3s.yaml permissions
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        mode: '0644'
+      become: true
+
+    - name: Create k3s group
+      group:
+        name: k3s
+        state: present
+      become: true
+
+    - name: Add user to k3s group
+      user:
+        name: "{{ ansible_user }}"
+        groups: k3s
+        append: yes
+      become: true
+
+- name: Install kubectl
+  get_url:
+    url: https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
   become: true
 
-- name: Vérifier si kubectl est installé
-  command: kubectl version --client
-  register: kubectl_installed
-  ignore_errors: true
-  environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+- name: Create kubeconfig directory
+  file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
 
-- name: Installer kubectl si absent
+- name: Copy kubeconfig
+  copy:
+    src: /etc/rancher/k3s/k3s.yaml
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600'
+  become: true
+
+- name: Set KUBECONFIG environment variable
+  lineinfile:
+    path: "{{ ansible_env.HOME }}/.bashrc"
+    line: "export KUBECONFIG={{ ansible_env.HOME }}/.kube/config"
+    create: yes
+
+- name: Install Helm
   shell: |
-    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-    chmod +x kubectl
-    mv kubectl /usr/local/bin/
-  args:
-    creates: /usr/local/bin/kubectl
-  when: kubectl_installed.rc != 0
-  become: true
-
-- name: Vérifier si Helm est installé
-  command: helm version
-  register: helm_installed
-  ignore_errors: true
-
-- name: Installer Helm si absent
-  shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
   args:
     creates: /usr/local/bin/helm
-  when: helm_installed.rc != 0
   become: true
 
-- name: Installer le CSI Driver Secrets Store
-  shell: |
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/deploy/rbac-secretproviderclass.yaml
-    kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/secrets-store-csi-driver/main/deploy/secrets-store-csi-driver.yaml
-  register: csi_installation
-  changed_when: "'created' in csi_installation.stdout or 'configured' in csi_installation.stdout"
-  become: true
-  environment:
-    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+- name: Add Helm repositories
+  command: "{{ item }}"
+  with_items:
+    - helm repo add traefik https://traefik.github.io/charts
+    - helm repo add bitnami https://charts.bitnami.com/bitnami
+    - helm repo update
+
+- name: Install Traefik
+  kubernetes.core.helm:
+    name: traefik
+    chart_ref: traefik/traefik
+    create_namespace: true
+    release_namespace: traefik
+    values:
+      service:
+        type: NodePort
+        nodePorts:
+          web: 30080
+          websecure: 30443
+
+- name: Wait for Traefik pods
+  shell: kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=traefik -n traefik --timeout=300s
+  register: wait_traefik
+  retries: 5
+  delay: 10
+  until: wait_traefik.rc == 0

@@ -16,6 +16,16 @@
       state: present
     become: true
 
+- name: Install Python packages
+  pip:
+    name:
+      - kubernetes>=12.0.0
+      - openshift
+      - PyYAML
+      - jsonpatch
+    state: present
+  become: true
+
 - name: Install boto3 and botocore locally
   pip:
     name: 
@@ -27,45 +37,45 @@
 
 - name: Installer les dépendances Docker
   apt:
-   name:
-     - apt-transport-https
-     - ca-certificates
-     - curl
-     - gnupg-agent
-     - software-properties-common
-   state: present
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg-agent
+      - software-properties-common
+    state: present
   become: true
 
 - name: Ajouter la clé GPG Docker
   apt_key:
-   url: https://download.docker.com/linux/ubuntu/gpg
-   state: present
+    url: https://download.docker.com/linux/ubuntu/gpg
+    state: present
   become: true
 
 - name: Ajouter le dépôt Docker
   apt_repository:
-   repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
-   state: present
+    repo: deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable
+    state: present
   become: true
 
 - name: Installer Docker
   apt:
-   name:
-     - docker-ce
-     - docker-ce-cli
-     - containerd.io
-   state: present
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+    state: present
   become: true
 
 - name: Activer le service Docker
   service:
-   name: docker
-   state: started
-   enabled: yes
+    name: docker
+    state: started
+    enabled: yes
   become: true
 
 - name: Install Python Docker package
   pip:
-   name: docker
-   state: present
+    name: docker
+    state: present
   become: true
