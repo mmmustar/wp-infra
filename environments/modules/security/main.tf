@@ -1,24 +1,30 @@
-// environments/modules/security/main.tf
-
 resource "aws_security_group" "wordpress" {
   name_prefix = "${var.project_name}-wp-${var.environment}"
   description = "Security group for WordPress instance"
   vpc_id      = var.vpc_id
 
   ingress {
-    from_port   = 80
-    to_port     = 80
+    from_port   = 30080
+    to_port     = 30080
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTP"
+    cidr_blocks = ["173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "104.16.0.0/13"]
+    description = "Allow Cloudflare HTTP - Traefik"
   }
 
   ingress {
-    from_port   = 443
-    to_port     = 443
+    from_port   = 30081
+    to_port     = 30081
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-    description = "Allow HTTPS"
+    cidr_blocks = ["173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "104.16.0.0/13"]
+    description = "Allow Cloudflare HTTP - WordPress"
+  }
+
+  ingress {
+    from_port   = 30443
+    to_port     = 30443
+    protocol    = "tcp"
+    cidr_blocks = ["173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "104.16.0.0/13"]
+    description = "Allow Cloudflare HTTPS"
   }
 
   ingress {

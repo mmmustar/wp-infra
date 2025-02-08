@@ -1,4 +1,3 @@
-# ansible/roles/wordpress/templates/ingress.yaml.j2
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -6,9 +5,11 @@ metadata:
   namespace: default
   annotations:
     kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.middlewares: "default-redirect-https@kubernetescrd"
+    traefik.ingress.kubernetes.io/ssl-redirect: "true"
 spec:
   rules:
-  - host: "{% if environment == 'prod' %}mmustar.fr{% else %}test.mmustar.fr{% endif %}"
+  - host: "test.mmustar.fr"
     http:
       paths:
       - path: /

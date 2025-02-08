@@ -1,4 +1,3 @@
-# ansible/roles/k3s/tasks/main.yml
 ---
 - name: Install K3s
   shell: |
@@ -23,19 +22,16 @@
         state: directory
         mode: '0755'
       become: true
-
     - name: Set k3s.yaml permissions
       file:
         path: /etc/rancher/k3s/k3s.yaml
         mode: '0644'
       become: true
-
     - name: Create k3s group
       group:
         name: k3s
         state: present
       become: true
-
     - name: Add user to k3s group
       user:
         name: "{{ ansible_user }}"
@@ -97,9 +93,16 @@
     values:
       service:
         type: NodePort
-        nodePorts:
-          web: 30080
-          websecure: 30443
+      ports:
+        web:
+          nodePort: 30080
+        websecure:
+          nodePort: 30443
+          expose: {}
+          exposedPort: 443
+      logs:
+        general:
+          level: DEBUG
 
 - name: Wait for Traefik pods
   shell: kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=traefik -n traefik --timeout=300s

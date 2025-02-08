@@ -42,7 +42,7 @@
       service:
         type: NodePort
         nodePorts:
-          http: 30080
+          http: 30081  # Changé de 30080 à 30081
       persistence:
         enabled: true
         size: 10Gi
