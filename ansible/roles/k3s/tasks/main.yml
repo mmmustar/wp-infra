@@ -1,9 +1,9 @@
 ---
-- name: Install K3s
+# ansible/roles/k3s/tasks/main.yml
+
+- name: Install K3s (sans Traefik intégré)
   shell: |
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -s - \
-      --disable servicelb \
-      --disable traefik
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -s - --disable servicelb --disable traefik
   args:
     creates: /usr/local/bin/k3s
   become: true
@@ -14,30 +14,31 @@
     state: present
     timeout: 60
 
-- name: Fix k3s permissions
-  block:
-    - name: Ensure k3s directory exists
-      file:
-        path: /etc/rancher/k3s
-        state: directory
-        mode: '0755'
-      become: true
-    - name: Set k3s.yaml permissions
-      file:
-        path: /etc/rancher/k3s/k3s.yaml
-        mode: '0644'
-      become: true
-    - name: Create k3s group
-      group:
-        name: k3s
-        state: present
-      become: true
-    - name: Add user to k3s group
-      user:
-        name: "{{ ansible_user }}"
-        groups: k3s
-        append: yes
-      become: true
+- name: Fix k3s permissions - Create k3s directory
+  file:
+    path: /etc/rancher/k3s
+    state: directory
+    mode: '0755'
+  become: true
+
+- name: Fix k3s permissions - Set k3s.yaml permissions
+  file:
+    path: /etc/rancher/k3s/k3s.yaml
+    mode: '0644'
+  become: true
+
+- name: Create k3s group
+  group:
+    name: k3s
+    state: present
+  become: true
+
+- name: Add user to k3s group
+  user:
+    name: "{{ ansible_user }}"
+    groups: k3s
+    append: yes
+  become: true
 
 - name: Install kubectl
   get_url:
@@ -54,7 +55,7 @@
     group: "{{ ansible_user }}"
     mode: '0755'
 
-- name: Copy kubeconfig
+- name: Copy kubeconfig from k3s
   copy:
     src: /etc/rancher/k3s/k3s.yaml
     dest: "{{ ansible_env.HOME }}/.kube/config"
@@ -64,7 +65,7 @@
     mode: '0600'
   become: true
 
-- name: Set KUBECONFIG environment variable
+- name: Set KUBECONFIG environment variable in .bashrc
   lineinfile:
     path: "{{ ansible_env.HOME }}/.bashrc"
     line: "export KUBECONFIG={{ ansible_env.HOME }}/.kube/config"
@@ -84,27 +85,35 @@
     - helm repo add bitnami https://charts.bitnami.com/bitnami
     - helm repo update
 
-- name: Install Traefik
+- name: Install/Upgrade Traefik with hostNetwork and NET_BIND_SERVICE
   kubernetes.core.helm:
     name: traefik
     chart_ref: traefik/traefik
     create_namespace: true
     release_namespace: traefik
     values:
+      hostNetwork: true
       service:
-        type: NodePort
+        enabled: false
       ports:
         web:
-          nodePort: 30080
+          port: 80
+          protocol: TCP
         websecure:
-          nodePort: 30443
-          expose: {}
-          exposedPort: 443
+          port: 443
+          protocol: TCP
+      deployment:
+        containerSecurityContext:
+          runAsNonRoot: true
+          runAsUser: 65532
+          capabilities:
+            add:
+              - NET_BIND_SERVICE
       logs:
         general:
           level: DEBUG
 
-- name: Wait for Traefik pods
+- name: Wait for Traefik pods to be ready
   shell: kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=traefik -n traefik --timeout=300s
   register: wait_traefik
   retries: 5
