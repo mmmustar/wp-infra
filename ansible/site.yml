@@ -19,8 +19,7 @@
     - role: aws_setup
       tags: [aws]
 
-    - role: nginx
-      tags: [nginx]
+    # Le rôle nginx est retiré, car nous utilisons le contrôleur Ingress déployé via k3s
 
     - role: k3s
       tags: [k3s]
@@ -31,12 +30,6 @@
       tags: [wordpress]
 
   post_tasks:
-    - name: Vérifier que NGINX est en cours d'exécution
-      service:
-        name: nginx
-        state: started
-        enabled: yes
-
     - name: Vérifier que K3s est en cours d'exécution
       service:
         name: k3s

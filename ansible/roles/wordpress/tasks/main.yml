@@ -32,7 +32,7 @@
         logged-in-salt: "{{ wp_logged_in_salt }}"
         nonce-salt: "{{ wp_nonce_salt }}"
 
-- name: Deploy WordPress
+- name: Deploy WordPress via Helm
   kubernetes.core.helm:
     name: wordpress
     chart_ref: bitnami/wordpress
@@ -48,6 +48,7 @@
         database: "{{ mysql_database }}"
       service:
         type: ClusterIP
+        port: 80
       ingress:
         enabled: false
       persistence:
@@ -67,7 +68,7 @@
           cpu: 500m
           memory: 512Mi
 
-- name: Wait for WordPress deployment
+- name: Wait for WordPress deployment to be ready
   kubernetes.core.k8s_info:
     kind: Pod
     namespace: wordpress
@@ -77,3 +78,8 @@
   until: wordpress_pods.resources | length > 0 and wordpress_pods.resources[0].status.phase == "Running"
   retries: 30
   delay: 10
+
+- name: Create Ingress for WordPress
+  kubernetes.core.k8s:
+    state: present
+    definition: "{{ lookup('template', 'ingress.yaml.j2') }}"

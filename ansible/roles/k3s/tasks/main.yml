@@ -6,8 +6,7 @@
     mode: '0700'
 
 - name: Install K3s
-  shell:
-    cmd: INSTALL_K3S_VERSION={{ k3s_version }} /tmp/k3s-install.sh {{ k3s_server_args }}
+  shell: INSTALL_K3S_VERSION={{ k3s_version }} /tmp/k3s-install.sh {{ k3s_server_args }}
   args:
     creates: /usr/local/bin/k3s
 
@@ -47,3 +46,18 @@
 
 - name: Add Bitnami Helm repository
   shell: helm repo add bitnami https://charts.bitnami.com/bitnami && helm repo update
+
+- name: Add ingress-nginx Helm repository
+  shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && helm repo update
+
+- name: Deploy Ingress NGINX Controller using Helm
+  kubernetes.core.helm:
+    name: ingress-nginx
+    chart_ref: ingress-nginx/ingress-nginx
+    release_namespace: ingress-nginx
+    create_namespace: true
+    values:
+      controller:
+        hostNetwork: true
+        service:
+          type: ClusterIP
