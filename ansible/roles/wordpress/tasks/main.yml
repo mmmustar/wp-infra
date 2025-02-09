@@ -1,5 +1,6 @@
-# ansible/roles/wordpress/tasks/main.yml
 ---
+# ansible/roles/wordpress/tasks/main.yml
+
 - name: Include tasks to fetch secrets
   include_tasks: secrets.yml
 
@@ -40,9 +41,7 @@
         database: "{{ wordpress_db_name }}"
         port: 3306
       service:
-        type: NodePort
-        nodePorts:
-          http: 30081  # Changé de 30080 à 30081
+        type: LoadBalancer
       persistence:
         enabled: true
         size: 10Gi

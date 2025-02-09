@@ -1,5 +1,5 @@
 ---
-- name: Préparer les nœuds pour Kubernetes (installer les dépendances via apt)
+- name: Préparer les nœuds pour Kubernetes (installer les dépendances via apt et pip)
   hosts: all
   become: true
   gather_facts: true
@@ -10,9 +10,15 @@
       apt:
         update_cache: yes
 
-    - name: Installer le package python3-kubernetes
+    - name: Installer python3-pip
       apt:
-        name: python3-kubernetes
+        name: python3-pip
+        state: present
+
+    - name: Installer le client Kubernetes via pip
+      pip:
+        name: kubernetes
+        executable: pip3
         state: present
 
 - name: Déployer K3s et Traefik
@@ -74,8 +80,7 @@
         --set externalDatabase.password={{ wp_db_password }} \
         --set externalDatabase.database={{ wp_db_name }} \
         --set externalDatabase.port=3306 \
-        --set service.type=NodePort \
-        --set service.nodePorts.http=30081 \
+        --set service.type=LoadBalancer \
         --set wordpressHost=test.mmustar.fr
       become_user: ubuntu
 

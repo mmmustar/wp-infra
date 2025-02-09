@@ -1,7 +1,7 @@
 - name: Copy K8s manifests
   template:
     src: "{{ item }}.j2"
-    dest: "/tmp/{{ item }}"
+    dest: "/tmp/{{ item | basename | regex_replace('.j2$', '') }}"
   with_items:
     - service.yaml
     - ingress.yaml
@@ -22,6 +22,5 @@
     --set externalDatabase.user={{ wordpress_db_user }}
     --set externalDatabase.password={{ wordpress_db_password }}
     --set externalDatabase.database={{ wordpress_db_name }}
-    --set service.type=NodePort
-    --set service.nodePorts.http=30080
+    --set service.type=LoadBalancer
     --set wordpressHost={% if environment == 'prod' %}mmustar.fr{% else %}test.mmustar.fr{% endif %}
