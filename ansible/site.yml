@@ -1,34 +1,4 @@
 ---
-- name: Préparer les nœuds pour Kubernetes (installer les dépendances via apt et pip)
-  hosts: all
-  become: true
-  gather_facts: true
-  vars:
-    ansible_python_interpreter: /usr/bin/python3
-  tasks:
-    - name: Mettre à jour le cache apt
-      apt:
-        update_cache: yes
-
-    - name: Installer python3-pip
-      apt:
-        name: python3-pip
-        state: present
-
-    - name: Installer le client Kubernetes via pip
-      pip:
-        name: kubernetes
-        executable: pip3
-        state: present
-
-- name: Déployer K3s et Traefik
-  hosts: all
-  become: true
-  gather_facts: true
-  roles:
-    - common
-    - k3s
-
 - name: Déployer WordPress sur Kubernetes avec Helm
   hosts: all
   become: true
@@ -62,33 +32,47 @@
           --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
           --from-literal=MYSQL_DATABASE={{ wp_db_name }}
       become_user: ubuntu
+      environment:
+        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
 
     - name: Ajouter le repo Helm Bitnami
       command: helm repo add bitnami https://charts.bitnami.com/bitnami
       become_user: ubuntu
+      environment:
+        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
 
     - name: Mettre à jour les dépôts Helm
       command: helm repo update
       become_user: ubuntu
+      environment:
+        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
 
     - name: Déployer WordPress avec Helm
-      command: >
-        helm upgrade --install wordpress bitnami/wordpress \
-        --set mariadb.enabled=false \
-        --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
-        --set externalDatabase.user={{ wp_db_user }} \
-        --set externalDatabase.password={{ wp_db_password }} \
-        --set externalDatabase.database={{ wp_db_name }} \
-        --set externalDatabase.port=3306 \
-        --set service.type=LoadBalancer \
-        --set wordpressHost=test.mmustar.fr
+      become: true
       become_user: ubuntu
+      become_flags: '-E'
+      environment:
+        KUBECONFIG: "/home/ubuntu/.kube/config"
+        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+      shell: |
+        helm upgrade --install wordpress bitnami/wordpress \
+          --set mariadb.enabled=false \
+          --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
+          --set externalDatabase.user={{ wp_db_user }} \
+          --set externalDatabase.password={{ wp_db_password }} \
+          --set externalDatabase.database={{ wp_db_name }} \
+          --set externalDatabase.port=3306 \
+          --set service.type=LoadBalancer \
+          --set wordpressHost=test.mmustar.fr
 
     - name: Vérifier que WordPress est bien déployé
-      command: kubectl get pods -n default
+      become: true
+      become_user: ubuntu
+      shell: kubectl get pods -n default
       register: wordpress_pods
       changed_when: false
-      become_user: ubuntu
+      environment:
+        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
 
     - name: Afficher les pods WordPress
       debug:

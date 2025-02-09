@@ -1,131 +1,79 @@
 ---
-# ansible/roles/k3s/tasks/main.yml
-
-- name: Install K3s (sans Traefik intégré)
-  shell: |
-    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--write-kubeconfig-mode 644" sh -s - --disable servicelb --disable traefik
-  args:
-    creates: /usr/local/bin/k3s
+- name: Déployer WordPress sur Kubernetes avec Helm
+  hosts: all
   become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  tasks:
+    - name: Installer les packages python3-boto3 et python3-botocore
+      apt:
+        name:
+          - python3-boto3
+          - python3-botocore
+        state: present
+        update_cache: yes
 
-- name: Wait for k3s to be ready
-  wait_for:
-    path: /etc/rancher/k3s/k3s.yaml
-    state: present
-    timeout: 60
+    - name: Récupérer les secrets AWS via boto3
+      set_fact:
+        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'book', region='eu-west-3') }}"
 
-- name: Fix k3s permissions - Create k3s directory
-  file:
-    path: /etc/rancher/k3s
-    state: directory
-    mode: '0755'
-  become: true
+    - name: Extraire les variables des secrets
+      set_fact:
+        wp_db_user: "{{ aws_secrets.MYSQL_USER }}"
+        wp_db_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        wp_db_name: "{{ aws_secrets.MYSQL_DATABASE }}"
 
-- name: Fix k3s permissions - Set k3s.yaml permissions
-  file:
-    path: /etc/rancher/k3s/k3s.yaml
-    mode: '0644'
-  become: true
+    - name: Créer un secret Kubernetes pour WordPress
+      shell: |
+        /usr/local/bin/kubectl delete secret wordpress-secrets -n default --ignore-not-found
+        /usr/local/bin/kubectl create secret generic wordpress-secrets -n default \
+          --from-literal=MYSQL_USER={{ wp_db_user }} \
+          --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
+          --from-literal=MYSQL_DATABASE={{ wp_db_name }}
+      become_user: ubuntu
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-- name: Create k3s group
-  group:
-    name: k3s
-    state: present
-  become: true
+    - name: Ajouter le repo Helm Bitnami
+      command: helm repo add bitnami https://charts.bitnami.com/bitnami
+      become_user: ubuntu
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-- name: Add user to k3s group
-  user:
-    name: "{{ ansible_user }}"
-    groups: k3s
-    append: yes
-  become: true
+    - name: Mettre à jour les dépôts Helm
+      command: helm repo update
+      become_user: ubuntu
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-- name: Install kubectl
-  get_url:
-    url: https://dl.k8s.io/release/v1.28.0/bin/linux/amd64/kubectl
-    dest: /usr/local/bin/kubectl
-    mode: '0755'
-  become: true
+    - name: Déployer WordPress avec Helm
+      become: true
+      become_user: ubuntu
+      become_flags: '-E'
+      environment:
+        KUBECONFIG: "/home/ubuntu/.kube/config"
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+      shell: |
+        helm upgrade --install wordpress bitnami/wordpress \
+          --set mariadb.enabled=false \
+          --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
+          --set externalDatabase.user={{ wp_db_user }} \
+          --set externalDatabase.password={{ wp_db_password }} \
+          --set externalDatabase.database={{ wp_db_name }} \
+          --set externalDatabase.port=3306 \
+          --set service.type=LoadBalancer \
+          --set wordpressHost=test.mmustar.fr
 
-- name: Create kubeconfig directory
-  file:
-    path: "{{ ansible_env.HOME }}/.kube"
-    state: directory
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: '0755'
+    - name: Vérifier que WordPress est bien déployé
+      become: true
+      become_user: ubuntu
+      shell: /usr/local/bin/kubectl get pods -n default
+      register: wordpress_pods
+      changed_when: false
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-- name: Copy kubeconfig from k3s
-  copy:
-    src: /etc/rancher/k3s/k3s.yaml
-    dest: "{{ ansible_env.HOME }}/.kube/config"
-    remote_src: yes
-    owner: "{{ ansible_user }}"
-    group: "{{ ansible_user }}"
-    mode: '0600'
-  become: true
-
-- name: Set KUBECONFIG environment variable in .bashrc
-  lineinfile:
-    path: "{{ ansible_env.HOME }}/.bashrc"
-    line: "export KUBECONFIG={{ ansible_env.HOME }}/.kube/config"
-    create: yes
-
-- name: Install Helm
-  shell: |
-    curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-  args:
-    creates: /usr/local/bin/helm
-  become: true
-
-- name: Add Helm repositories
-  command: "{{ item }}"
-  with_items:
-    - helm repo add traefik https://traefik.github.io/charts
-    - helm repo add bitnami https://charts.bitnami.com/bitnami
-    - helm repo update
-
-- name: Installer/Mettre à jour Traefik avec configuration complète (force upgrade)
-  kubernetes.core.helm:
-    name: traefik
-    chart_ref: traefik/traefik
-    chart_version: "34.3.0"         # Version compatible du chart
-    create_namespace: true
-    release_namespace: traefik
-    force: true
-    values:
-      hostNetwork: true
-      service:
-        enabled: false
-      ports:
-        web:
-          port: 80
-          protocol: TCP
-        websecure:
-          port: 443
-          protocol: TCP
-      serviceAccount:
-        name: traefik
-      rbac:
-        enabled: true
-      podSecurityContext:
-        runAsUser: 65532
-        runAsGroup: 65532
-        fsGroup: 65532
-      securityContext:
-        runAsNonRoot: true
-        runAsUser: 65532
-        capabilities:
-          add:
-            - NET_BIND_SERVICE
-        readOnlyRootFilesystem: false
-      logs:
-        general:
-          level: DEBUG
-
-- name: Wait for Traefik pods to be ready
-  shell: kubectl wait --for=condition=Ready pods -l app.kubernetes.io/name=traefik -n traefik --timeout=300s
-  register: wait_traefik
-  retries: 5
-  delay: 10
-  until: wait_traefik.rc == 0
+    - name: Afficher les pods WordPress
+      debug:
+        msg: "{{ wordpress_pods.stdout_lines }}"
