@@ -1,103 +1,53 @@
 ---
-# Play 1 : Installer K3s sur tous les hôtes
-- name: Installer K3s sur tous les hôtes
-  hosts: all
-  become: true
-  gather_facts: true
-  roles:
-    - k3s
-
-# Play 2 : Déployer WordPress via Helm sur le cluster Kubernetes
-- name: Déployer WordPress sur Kubernetes avec Helm
+- name: Configuration du serveur WordPress
   hosts: all
   become: true
   gather_facts: true
   vars:
     ansible_python_interpreter: /usr/bin/python3
-  tasks:
-    - name: Fixer les permissions du fichier kubeconfig
-      file:
-        path: /etc/rancher/k3s/k3s.yaml
-        owner: ubuntu
-        group: ubuntu
-        mode: '0644'
-      become: true
 
-    - name: Vérifier l'accès au cluster Kubernetes
-      shell: /usr/local/bin/kubectl cluster-info
-      register: cluster_info
-      failed_when: cluster_info.rc != 0
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+  pre_tasks:
+    - name: Mise à jour du cache apt
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
 
-    - name: Installer Helm si non installé
-      shell: |
-        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-      args:
-        creates: /usr/local/bin/helm
-      become: true
+  roles:
+    - role: common
+      tags: [common]
 
-    - name: Ajouter le repo Helm Bitnami
-      command: /usr/local/bin/helm repo add bitnami https://charts.bitnami.com/bitnami
-      become_user: ubuntu
-      environment:
-        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    - role: aws_setup
+      tags: [aws]
 
-    - name: Mettre à jour les dépôts Helm
-      command: /usr/local/bin/helm repo update
-      become_user: ubuntu
-      environment:
-        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+    - role: nginx
+      tags: [nginx]
 
-    - name: Récupérer les secrets AWS via boto3
-      set_fact:
-        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'book', region='eu-west-3') }}"
+    - role: k3s
+      tags: [k3s]
+      vars:
+        k3s_server_args: "--disable traefik --disable servicelb --tls-san {{ domain_name }}"
 
-    - name: Extraire les variables des secrets
-      set_fact:
-        wp_db_user: "{{ aws_secrets.MYSQL_USER }}"
-        wp_db_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
-        wp_db_name: "{{ aws_secrets.MYSQL_DATABASE }}"
+    - role: wordpress
+      tags: [wordpress]
 
-    - name: Créer un secret Kubernetes pour WordPress
-      shell: |
-        /usr/local/bin/kubectl delete secret wordpress-secrets -n default --ignore-not-found
-        /usr/local/bin/kubectl create secret generic wordpress-secrets -n default \
-          --from-literal=MYSQL_USER={{ wp_db_user }} \
-          --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
-          --from-literal=MYSQL_DATABASE={{ wp_db_name }}
-      become_user: ubuntu
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  post_tasks:
+    - name: Vérifier que NGINX est en cours d'exécution
+      service:
+        name: nginx
+        state: started
+        enabled: yes
 
-    - name: Déployer WordPress avec Helm
-      become: true
-      become_user: ubuntu
-      become_flags: '-E'
-      environment:
-        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
-        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-      shell: |
-        /usr/local/bin/helm upgrade --install wordpress bitnami/wordpress \
-          --set mariadb.enabled=false \
-          --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
-          --set externalDatabase.user={{ wp_db_user }} \
-          --set externalDatabase.password={{ wp_db_password }} \
-          --set externalDatabase.database={{ wp_db_name }} \
-          --set externalDatabase.port=3306 \
-          --set service.type=LoadBalancer \
-          --set wordpressHost=test.mmustar.fr
+    - name: Vérifier que K3s est en cours d'exécution
+      service:
+        name: k3s
+        state: started
+        enabled: yes
 
-    - name: Vérifier que WordPress est bien déployé
-      become: true
-      become_user: ubuntu
-      shell: /usr/local/bin/kubectl get pods -n default
+    - name: Vérifier l'état des pods WordPress
+      shell: kubectl get pods -n wordpress
       register: wordpress_pods
       changed_when: false
-      environment:
-        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-    - name: Afficher les pods WordPress
+    - name: Afficher l'état des pods
       debug:
-        msg: "{{ wordpress_pods.stdout_lines }}"
+        var: wordpress_pods.stdout_lines

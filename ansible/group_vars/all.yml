@@ -1,30 +1,19 @@
-# ansible/group_vars/all.yml
 ---
-timezone: UTC
+# Environment Configuration
 environment: "{{ lookup('env', 'ENVIRONMENT') | default('test', true) }}"
-aws_access_key: "your_access_key"
-aws_secret_key: "your_secret_key"
-aws_region: "eu-west-3"
-nginx_conf_path: "/etc/nginx/sites-available/wordpress"
-nginx_conf_symlink: "/etc/nginx/sites-enabled/wordpress"
-wordpress_site_url: "{% if environment == 'prod' %}http://mmustar.fr{% else %}http://test.mmustar.fr{% endif %}"
-wordpress_secret_name: "book"
-wordpress_port: 8080
-wordpress_image: wordpress:latest
-wp_volume_path: /data/wordpress
+domain_name: "{% if environment == 'prod' %}mmustar.fr{% else %}test.mmustar.fr{% endif %}"
 
-# Secrets via variables d'environnement
-wordpress_db_host: "{{ lookup('env', 'WORDPRESS_DB_HOST') }}"
-wordpress_db_user: "{{ lookup('env', 'WORDPRESS_DB_USER') }}"
-wordpress_db_password: "{{ lookup('env', 'WORDPRESS_DB_PASSWORD') }}"
-wordpress_db_name: "{{ lookup('env', 'WORDPRESS_DB_NAME') }}"
-wordpress_wp_id: "{{ lookup('env', 'WP_ID') }}"
-wordpress_auth_key: "{{ lookup('env', 'AUTH_KEY') }}"
-wordpress_secure_auth_key: "{{ lookup('env', 'SECURE_AUTH_KEY') }}"
-wordpress_logged_in_key: "{{ lookup('env', 'LOGGED_IN_KEY') }}"
-wordpress_nonce_key: "{{ lookup('env', 'NONCE_KEY') }}"
-wordpress_auth_salt: "{{ lookup('env', 'AUTH_SALT') }}"
-wordpress_secure_auth_salt: "{{ lookup('env', 'SECURE_AUTH_SALT') }}"
-wordpress_logged_in_salt: "{{ lookup('env', 'LOGGED_IN_SALT') }}"
-wordpress_nonce_salt: "{{ lookup('env', 'NONCE_SALT') }}"
-#cool
+# AWS Configuration
+aws_region: "eu-west-3"
+aws_secret_name: "book"
+aws_secret_arn: "arn:aws:secretsmanager:eu-west-3:730335289383:secret:book-8BJRmW"
+
+# NGINX Configuration
+nginx_worker_processes: auto
+nginx_worker_connections: 1024
+nginx_client_max_body_size: "64M"
+nginx_proxy_connect_timeout: "600"
+nginx_proxy_send_timeout: "600"
+nginx_proxy_read_timeout: "600"
+
+# K3s Configuration

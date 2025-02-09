@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: wordpress-config
+  namespace: wordpress
+data:
+  WORDPRESS_CONFIG_EXTRA: |
+    /* Site URL */
+    define('WP_HOME', 'https://{{ domain_name }}');
+    define('WP_SITEURL', 'https://{{ domain_name }}');
+
+    /* Custom Settings */
+    define('WP_POST_REVISIONS', 5);
+    define('EMPTY_TRASH_DAYS', 7);
+    define('WP_MEMORY_LIMIT', '256M');
+    define('WP_MAX_MEMORY_LIMIT', '512M');
+
+    /* Security Settings */
+    define('DISALLOW_FILE_EDIT', true);
+    define('AUTOMATIC_UPDATER_DISABLED', true);
+    define('WP_AUTO_UPDATE_CORE', false);
+
+    /* Performance Settings */
+    define('WP_CACHE', true);
+    define('WP_CACHE_KEY_SALT', '{{ domain_name }}');
+
+    {% if environment == 'test' %}
+    define('WP_DEBUG', true);
+    define('WP_DEBUG_LOG', true);
+    define('WP_DEBUG_DISPLAY', false);
+    {% else %}
+    define('WP_DEBUG', false);
+    {% endif %}

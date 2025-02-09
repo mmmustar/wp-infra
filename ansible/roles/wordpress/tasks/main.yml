@@ -1,56 +1,79 @@
 ---
-# ansible/roles/wordpress/tasks/main.yml
-
-- name: Include tasks to fetch secrets
+- name: Include secrets tasks
   include_tasks: secrets.yml
 
-- name: Create required directories
-  file:
-    path: "{{ item }}"
-    state: directory
-    mode: '0755'
-  with_items:
-    - "{{ wp_volume_path }}"
-    - "/tmp/kubernetes"
+- name: Create WordPress namespace
+  kubernetes.core.k8s:
+    name: wordpress
+    api_version: v1
+    kind: Namespace
+    state: present
 
-- name: Copy Kubernetes manifests
-  template:
-    src: "{{ item }}"
-    dest: "/tmp/kubernetes/{{ item | basename | regex_replace('.j2$', '') }}"
-  with_fileglob:
-    - "../templates/*.j2"
-
-- name: Add Bitnami repo
-  kubernetes.core.helm_repository:
-    name: bitnami
-    repo_url: https://charts.bitnami.com/bitnami
+- name: Create WordPress credentials secret
+  kubernetes.core.k8s:
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Secret
+      metadata:
+        name: wordpress-secrets
+        namespace: wordpress
+      type: Opaque
+      stringData:
+        mysql-password: "{{ mysql_password }}"
+        mysql-user: "{{ mysql_user }}"
+        mysql-database: "{{ mysql_database }}"
+        auth-key: "{{ wp_auth_key }}"
+        secure-auth-key: "{{ wp_secure_auth_key }}"
+        logged-in-key: "{{ wp_logged_in_key }}"
+        nonce-key: "{{ wp_nonce_key }}"
+        auth-salt: "{{ wp_auth_salt }}"
+        secure-auth-salt: "{{ wp_secure_auth_salt }}"
+        logged-in-salt: "{{ wp_logged_in_salt }}"
+        nonce-salt: "{{ wp_nonce_salt }}"
 
 - name: Deploy WordPress
   kubernetes.core.helm:
     name: wordpress
     chart_ref: bitnami/wordpress
-    release_namespace: default
-    create_namespace: true
+    release_namespace: wordpress
     values:
       mariadb:
         enabled: false
       externalDatabase:
-        host: "{{ wordpress_db_host }}"
-        user: "{{ wordpress_db_user }}"
-        password: "{{ wordpress_db_password }}"
-        database: "{{ wordpress_db_name }}"
-        port: 3306
+        host: "{{ mysql_host }}"
+        port: "{{ mysql_port }}"
+        user: "{{ mysql_user }}"
+        password: "{{ mysql_password }}"
+        database: "{{ mysql_database }}"
       service:
-        type: LoadBalancer
+        type: ClusterIP
+      ingress:
+        enabled: false
       persistence:
         enabled: true
         size: 10Gi
-      wordpressHost: "{{ 'test.mmustar.fr' if environment == 'test' else 'mmustar.fr' }}"
+      existingSecret: wordpress-secrets
+      extraEnvVars:
+        - name: WORDPRESS_CONFIG_EXTRA
+          value: |
+            define('WP_HOME', 'https://{{ domain_name }}');
+            define('WP_SITEURL', 'https://{{ domain_name }}');
+      resources:
+        limits:
+          cpu: 1000m
+          memory: 1Gi
+        requests:
+          cpu: 500m
+          memory: 512Mi
 
-- name: Apply additional manifests
-  kubernetes.core.k8s:
-    state: present
-    src: "/tmp/kubernetes/{{ item }}"
-  with_items:
-    - ingress.yaml
-    - aws-secrets.yml
+- name: Wait for WordPress deployment
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: wordpress
+    label_selectors:
+      - app.kubernetes.io/name=wordpress
+  register: wordpress_pods
+  until: wordpress_pods.resources | length > 0 and wordpress_pods.resources[0].status.phase == "Running"
+  retries: 30
+  delay: 10

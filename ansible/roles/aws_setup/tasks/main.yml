@@ -1,0 +1,32 @@
+---
+- name: Install AWS CLI dependencies
+  apt:
+    name:
+      - python3-pip
+      - python3-boto3
+    state: present
+    update_cache: yes
+
+- name: Fetch AWS secrets
+  aws_secret:
+    name: "book"
+    region: "{{ aws_region }}"
+  register: wp_secrets
+  no_log: true
+
+- name: Set fact with secrets
+  set_fact:
+    mysql_host: "{{ wp_secrets.secret | json_query('MYSQL_HOST') }}"
+    mysql_user: "{{ wp_secrets.secret | json_query('MYSQL_USER') }}"
+    mysql_password: "{{ wp_secrets.secret | json_query('MYSQL_PASSWORD') }}"
+    mysql_database: "{{ wp_secrets.secret | json_query('MYSQL_DATABASE') }}"
+    mysql_port: "{{ wp_secrets.secret | json_query('MYSQL_PORT') }}"
+    wp_auth_key: "{{ wp_secrets.secret | json_query('AUTH_KEY') }}"
+    wp_secure_auth_key: "{{ wp_secrets.secret | json_query('SECURE_AUTH_KEY') }}"
+    wp_logged_in_key: "{{ wp_secrets.secret | json_query('LOGGED_IN_KEY') }}"
+    wp_nonce_key: "{{ wp_secrets.secret | json_query('NONCE_KEY') }}"
+    wp_auth_salt: "{{ wp_secrets.secret | json_query('AUTH_SALT') }}"
+    wp_secure_auth_salt: "{{ wp_secrets.secret | json_query('SECURE_AUTH_SALT') }}"
+    wp_logged_in_salt: "{{ wp_secrets.secret | json_query('LOGGED_IN_SALT') }}"
+    wp_nonce_salt: "{{ wp_secrets.secret | json_query('NONCE_SALT') }}"
+  no_log: true

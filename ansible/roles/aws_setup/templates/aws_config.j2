@@ -1,0 +1,8 @@
+[default]
+region = {{ aws_region }}
+output = json
+
+[profile wordpress]
+region = {{ aws_region }}
+role_arn = arn:aws:iam::{{ aws_account_id }}:role/EC2-WordPress-Access
+credential_source = Ec2InstanceMetadata
