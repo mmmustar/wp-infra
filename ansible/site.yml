@@ -1,4 +1,13 @@
 ---
+# Play 1 : Installer K3s sur tous les hôtes
+- name: Installer K3s sur tous les hôtes
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - k3s
+
+# Play 2 : Déployer WordPress via Helm sur le cluster Kubernetes
 - name: Déployer WordPress sur Kubernetes avec Helm
   hosts: all
   become: true
@@ -6,13 +15,39 @@
   vars:
     ansible_python_interpreter: /usr/bin/python3
   tasks:
-    - name: Installer les packages python3-boto3 et python3-botocore
-      apt:
-        name:
-          - python3-boto3
-          - python3-botocore
-        state: present
-        update_cache: yes
+    - name: Fixer les permissions du fichier kubeconfig
+      file:
+        path: /etc/rancher/k3s/k3s.yaml
+        owner: ubuntu
+        group: ubuntu
+        mode: '0644'
+      become: true
+
+    - name: Vérifier l'accès au cluster Kubernetes
+      shell: /usr/local/bin/kubectl cluster-info
+      register: cluster_info
+      failed_when: cluster_info.rc != 0
+      environment:
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+    - name: Installer Helm si non installé
+      shell: |
+        curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+      args:
+        creates: /usr/local/bin/helm
+      become: true
+
+    - name: Ajouter le repo Helm Bitnami
+      command: /usr/local/bin/helm repo add bitnami https://charts.bitnami.com/bitnami
+      become_user: ubuntu
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+    - name: Mettre à jour les dépôts Helm
+      command: /usr/local/bin/helm repo update
+      become_user: ubuntu
+      environment:
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     - name: Récupérer les secrets AWS via boto3
       set_fact:
@@ -26,36 +61,25 @@
 
     - name: Créer un secret Kubernetes pour WordPress
       shell: |
-        kubectl delete secret wordpress-secrets -n default --ignore-not-found
-        kubectl create secret generic wordpress-secrets -n default \
+        /usr/local/bin/kubectl delete secret wordpress-secrets -n default --ignore-not-found
+        /usr/local/bin/kubectl create secret generic wordpress-secrets -n default \
           --from-literal=MYSQL_USER={{ wp_db_user }} \
           --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
           --from-literal=MYSQL_DATABASE={{ wp_db_name }}
       become_user: ubuntu
       environment:
-        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
-
-    - name: Ajouter le repo Helm Bitnami
-      command: helm repo add bitnami https://charts.bitnami.com/bitnami
-      become_user: ubuntu
-      environment:
-        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
-
-    - name: Mettre à jour les dépôts Helm
-      command: helm repo update
-      become_user: ubuntu
-      environment:
-        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     - name: Déployer WordPress avec Helm
       become: true
       become_user: ubuntu
       become_flags: '-E'
       environment:
-        KUBECONFIG: "/home/ubuntu/.kube/config"
-        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+        KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
       shell: |
-        helm upgrade --install wordpress bitnami/wordpress \
+        /usr/local/bin/helm upgrade --install wordpress bitnami/wordpress \
           --set mariadb.enabled=false \
           --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
           --set externalDatabase.user={{ wp_db_user }} \
@@ -68,11 +92,11 @@
     - name: Vérifier que WordPress est bien déployé
       become: true
       become_user: ubuntu
-      shell: kubectl get pods -n default
+      shell: /usr/local/bin/kubectl get pods -n default
       register: wordpress_pods
       changed_when: false
       environment:
-        PATH: "/usr/local/bin:{{ ansible_env.PATH }}"
+        PATH: "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
     - name: Afficher les pods WordPress
       debug:
