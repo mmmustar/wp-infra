@@ -85,12 +85,14 @@
     - helm repo add bitnami https://charts.bitnami.com/bitnami
     - helm repo update
 
-- name: Install/Upgrade Traefik with hostNetwork and NET_BIND_SERVICE
+- name: Installer/Mettre à jour Traefik avec configuration complète (force upgrade)
   kubernetes.core.helm:
     name: traefik
     chart_ref: traefik/traefik
+    chart_version: "34.3.0"         # Version compatible du chart
     create_namespace: true
     release_namespace: traefik
+    force: true
     values:
       hostNetwork: true
       service:
@@ -102,13 +104,21 @@
         websecure:
           port: 443
           protocol: TCP
-      deployment:
-        containerSecurityContext:
-          runAsNonRoot: true
-          runAsUser: 65532
-          capabilities:
-            add:
-              - NET_BIND_SERVICE
+      serviceAccount:
+        name: traefik
+      rbac:
+        enabled: true
+      podSecurityContext:
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        capabilities:
+          add:
+            - NET_BIND_SERVICE
+        readOnlyRootFilesystem: false
       logs:
         general:
           level: DEBUG

@@ -1,113 +1,90 @@
 ---
+- name: Préparer les nœuds pour Kubernetes (installer les dépendances via apt)
+  hosts: all
+  become: true
+  gather_facts: true
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  tasks:
+    - name: Mettre à jour le cache apt
+      apt:
+        update_cache: yes
+
+    - name: Installer le package python3-kubernetes
+      apt:
+        name: python3-kubernetes
+        state: present
+
+- name: Déployer K3s et Traefik
+  hosts: all
+  become: true
+  gather_facts: true
+  roles:
+    - common
+    - k3s
+
 - name: Déployer WordPress sur Kubernetes avec Helm
   hosts: all
   become: true
   gather_facts: true
-
-  roles:
-   - common
-   - k3s
-   - wordpress
-
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
   tasks:
-   - name: Créer le répertoire .kube
-     file:
-       path: /home/ubuntu/.kube
-       state: directory
-       mode: '0755'
-       owner: ubuntu
-       group: ubuntu
+    - name: Installer les packages python3-boto3 et python3-botocore
+      apt:
+        name:
+          - python3-boto3
+          - python3-botocore
+        state: present
+        update_cache: yes
 
-   - name: Copier la configuration k3s
-     copy:
-       src: /etc/rancher/k3s/k3s.yaml
-       dest: /home/ubuntu/.kube/config
-       remote_src: yes
-       owner: ubuntu
-       group: ubuntu
-       mode: '0600'
+    - name: Récupérer les secrets AWS via boto3
+      set_fact:
+        aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'book', region='eu-west-3') }}"
 
-   - name: Configurer KUBECONFIG
-     lineinfile:
-       path: /home/ubuntu/.bashrc
-       line: 'export KUBECONFIG=/home/ubuntu/.kube/config'
-       state: present
+    - name: Extraire les variables des secrets
+      set_fact:
+        wp_db_user: "{{ aws_secrets.MYSQL_USER }}"
+        wp_db_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
+        wp_db_name: "{{ aws_secrets.MYSQL_DATABASE }}"
 
-   - name: Recharger .bashrc
-     shell: source /home/ubuntu/.bashrc
-     args:
-       executable: /bin/bash
+    - name: Créer un secret Kubernetes pour WordPress
+      shell: |
+        kubectl delete secret wordpress-secrets -n default --ignore-not-found
+        kubectl create secret generic wordpress-secrets -n default \
+          --from-literal=MYSQL_USER={{ wp_db_user }} \
+          --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
+          --from-literal=MYSQL_DATABASE={{ wp_db_name }}
+      become_user: ubuntu
 
-   - name: Vérifier que K3s est installé
-     command: kubectl get nodes
-     register: k3s_check
-     changed_when: false
-     become_user: ubuntu
+    - name: Ajouter le repo Helm Bitnami
+      command: helm repo add bitnami https://charts.bitnami.com/bitnami
+      become_user: ubuntu
 
-   - name: Afficher l'état de K3s
-     debug:
-       msg: "{{ k3s_check.stdout_lines }}"
+    - name: Mettre à jour les dépôts Helm
+      command: helm repo update
+      become_user: ubuntu
 
-   - name: Installer Helm
-     shell: curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-     args:
-       creates: /usr/local/bin/helm
+    - name: Déployer WordPress avec Helm
+      command: >
+        helm upgrade --install wordpress bitnami/wordpress \
+        --set mariadb.enabled=false \
+        --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
+        --set externalDatabase.user={{ wp_db_user }} \
+        --set externalDatabase.password={{ wp_db_password }} \
+        --set externalDatabase.database={{ wp_db_name }} \
+        --set externalDatabase.port=3306 \
+        --set service.type=NodePort \
+        --set service.nodePorts.http=30081 \
+        --set wordpressHost=test.mmustar.fr
+      become_user: ubuntu
 
-   - name: Installer Boto3 et Botocore
-     pip:
-       name: 
-         - boto3
-         - botocore
-       state: present
+    - name: Vérifier que WordPress est bien déployé
+      command: kubectl get pods -n default
+      register: wordpress_pods
+      changed_when: false
+      become_user: ubuntu
 
-   - name: Récupérer les secrets AWS via Boto3
-     set_fact:
-       aws_secrets: "{{ lookup('amazon.aws.aws_secret', 'book', region='eu-west-3') }}"
-
-   - name: Extraire les variables des secrets
-     set_fact:
-       wp_db_user: "{{ aws_secrets.MYSQL_USER }}"
-       wp_db_password: "{{ aws_secrets.MYSQL_PASSWORD }}"
-       wp_db_name: "{{ aws_secrets.MYSQL_DATABASE }}"
-
-   - name: Créer un secret Kubernetes pour WordPress
-     shell: |
-       kubectl delete secret wordpress-secrets -n default --ignore-not-found
-       kubectl create secret generic wordpress-secrets -n default \
-         --from-literal=MYSQL_USER={{ wp_db_user }} \
-         --from-literal=MYSQL_PASSWORD={{ wp_db_password }} \
-         --from-literal=MYSQL_DATABASE={{ wp_db_name }}
-     become_user: ubuntu
-
-   - name: Ajouter le repo Helm Bitnami
-     command: helm repo add bitnami https://charts.bitnami.com/bitnami
-     become_user: ubuntu
-
-   - name: Mettre à jour les dépôts Helm
-     command: helm repo update
-     become_user: ubuntu
-
-   - name: Déployer WordPress avec Helm
-     command: >
-      helm upgrade --install wordpress bitnami/wordpress \
-      --set mariadb.enabled=false \
-      --set externalDatabase.host=wordpress-db.cdaookoquxxr.eu-west-3.rds.amazonaws.com \
-      --set externalDatabase.user={{ wp_db_user }} \
-      --set externalDatabase.password={{ wp_db_password }} \
-      --set externalDatabase.database={{ wp_db_name }} \
-      --set externalDatabase.port=3306 \
-      --set service.type=NodePort \
-      --set service.nodePorts.http=30081 \
-      --set wordpressHost=test.mmustar.fr
-     become_user: ubuntu
-
-
-   - name: Vérifier que WordPress est bien déployé
-     command: kubectl get pods -n default
-     register: wordpress_pods
-     changed_when: false
-     become_user: ubuntu
-
-   - name: Afficher les pods WordPress
-     debug:
-       msg: "{{ wordpress_pods.stdout_lines }}"
+    - name: Afficher les pods WordPress
+      debug:
+        msg: "{{ wordpress_pods.stdout_lines }}"
