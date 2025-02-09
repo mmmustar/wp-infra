@@ -1,6 +1,0 @@
----
-k3s_version: "v1.28.4+k3s2"
-k3s_server_args: "--disable traefik --disable servicelb --tls-san {{ domain_name }}"
-k3s_token: "{{ lookup('env', 'K3S_TOKEN') | default('random_token_here', true) }}"
-k3s_config_dir: "/etc/rancher/k3s"
-k3s_systemd_dir: "/etc/systemd/system"
