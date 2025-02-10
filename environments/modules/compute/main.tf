@@ -1,4 +1,4 @@
-// 🔹 Sélection de l'AMI Ubuntu 20.04 LTS
+// 🔹 Sélection de l'AMI Ubuntu 20.04 LTS *
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"]  // Canonical
@@ -41,16 +41,17 @@ resource "aws_iam_role" "ec2_wordpress_role" {
       Action = "sts:AssumeRole"
     }]
   })
-}
-
-// 🔹 Attachement de la politique IAM à l'EC2
-resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
-  name = "EC2WordPressProfile"
-  role = aws_iam_role.ec2_wordpress_role.name
 
   lifecycle {
     ignore_changes = [name]
   }
+}
+
+
+// 🔹 Attachement de la politique IAM à l'EC2
+resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
+  name = "EC2WordPressProfile-${var.environment}"
+  role = aws_iam_role.ec2_wordpress_role.name
 }
 
 
