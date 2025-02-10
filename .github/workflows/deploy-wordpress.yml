@@ -1,5 +1,5 @@
 name: Deploy WordPress on EC2
-#test
+
 on:
   push:
     branches:
@@ -33,12 +33,12 @@ jobs:
 
       - name: 🚀 Copier les fichiers sur l'EC2
         run: |
-          scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa environments/test/secrets.json ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa environments/${{ env.DEPLOY_ENV }}/secrets.json ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
 
-      - name: 🏗️ Exécuter le script de déploiement sur l'EC2
+      - name: 🏰 Exécuter le script de déploiement sur l'EC2
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "chmod +x /home/ubuntu/deploy_wordpress.sh && sudo /home/ubuntu/deploy_wordpress.sh"
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "export DEPLOY_ENV=${{ env.DEPLOY_ENV }} && chmod +x /home/ubuntu/deploy_wordpress.sh && sudo /home/ubuntu/deploy_wordpress.sh"
 
       - name: ✅ Déploiement terminé
         run: echo "Déploiement effectué sur ${{ env.DEPLOY_ENV }}"
