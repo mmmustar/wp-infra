@@ -29,7 +29,7 @@ resource "aws_instance" "wordpress" {
   }
 }
 
-// 🔹 Création du rôle IAM pour EC2
+// 🔹 Création du rôle IAM pour l'EC2
 resource "aws_iam_role" "ec2_wordpress_role" {
   name = "EC2-WordPress-Access"
 
@@ -43,7 +43,7 @@ resource "aws_iam_role" "ec2_wordpress_role" {
   })
 }
 
-// 🔹 Attachement de la politique IAM à l'EC2
+// 🔹 Attachement de la politique IAM à l'EC2 
 resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
   name = "EC2WordPressProfile"
   role = aws_iam_role.ec2_wordpress_role.name
