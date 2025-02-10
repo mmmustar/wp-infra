@@ -1,4 +1,24 @@
-# environments/prod/main.tf
+terraform {
+  backend "s3" {
+    bucket         = "wordpress-mmustar-terraform-state"
+    key            = "environments/prod/terraform.tfstate"
+    region         = "eu-west-3"
+    dynamodb_table = "wordpress-mmustar-terraform-locks"
+    encrypt        = true
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+  
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      ManagedBy   = "terraform"
+    }
+  }
+}
+
 variable "environment" {
   description = "Deployment environment"
   type        = string
@@ -11,6 +31,13 @@ variable "project_name" {
   default     = "wordpress-mmustar"
 }
 
+variable "eip_id" {
+  description = "Elastic IP allocation ID"
+  type        = string
+  default     = "eipalloc-0efd7f176e6acc5cc"
+}
+
+# 🔹 Récupération des secrets depuis AWS Secrets Manager
 data "aws_secretsmanager_secret" "wp_secrets" {
   name = "book"
 }
@@ -19,10 +46,17 @@ data "aws_secretsmanager_secret_version" "wp_secrets" {
   secret_id = data.aws_secretsmanager_secret.wp_secrets.id
 }
 
+resource "local_file" "secrets_json" {
+  content  = jsonencode(jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string))
+  filename = "${path.module}/secrets.json"
+}
+
+# 🔹 Sélection du VPC existant
 data "aws_vpc" "existing" {
   id = "vpc-0385cddb5bd815883"
 }
 
+# 🔹 Création d'un sous-réseau pour la compute instance
 resource "aws_subnet" "compute" {
   vpc_id                  = data.aws_vpc.existing.id
   cidr_block              = "10.0.101.0/24"
@@ -36,6 +70,7 @@ resource "aws_subnet" "compute" {
   }
 }
 
+# 🔹 Déploiement des modules de sécurité
 module "security" {
   source       = "../modules/security"
   environment  = var.environment
@@ -43,6 +78,7 @@ module "security" {
   vpc_id       = data.aws_vpc.existing.id
 }
 
+# 🔹 Déploiement de l'instance EC2
 module "compute" {
   source            = "../modules/compute"
   environment       = var.environment
@@ -54,64 +90,24 @@ module "compute" {
   key_name          = "test-aws-key-pair-new"
 }
 
+# 🔹 Association de l'Elastic IP à l'instance EC2
 resource "aws_eip_association" "wordpress_eip_assoc" {
   instance_id   = module.compute.instance_id
-  allocation_id = "eipalloc-0efd7f176e6acc5cc"
+  allocation_id = var.eip_id
 }
 
-data "aws_eips" "wordpress" {
-  filter {
-    name   = "allocation-id"
-    values = ["eipalloc-0efd7f176e6acc5cc"]
-  }
-}
-
-data "aws_db_instance" "wordpress" {
-  db_instance_identifier = "wordpress-db"
-}
-
-resource "local_file" "secrets_json" {
-  content  = jsonencode(jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string))
-  filename = "${path.module}/secrets.json"
-}
-
-resource "local_file" "ansible_inventory" {
-  content = yamlencode({
-    all = {
-      children = {
-        wordpress = {
-          hosts = {
-            "wp-prod" = {
-              ansible_host = data.aws_eips.wordpress.public_ips[0]
-              ansible_user = "ubuntu"
-              ansible_ssh_private_key_file = "~/.ssh/test-aws-key-pair-new.pem"
-              ansible_python_interpreter = "/usr/bin/python3"
-            }
-          }
-        }
-      }
-    }
-  })
-  filename = "${path.module}/../../ansible/inventory/hosts_prod.yml"
-}
-
-output "rds_endpoint" {
-  value = data.aws_db_instance.wordpress.endpoint
+# 🔹 Outputs
+output "instance_id" {
+  description = "ID de l'instance EC2"
+  value       = module.compute.instance_id
 }
 
 output "instance_public_ip" {
-  value = module.compute.instance_public_ip
-}
-
-output "instance_id" {
-  value = module.compute.instance_id
+  description = "Adresse IP publique de l'EC2"
+  value       = module.compute.instance_public_ip
 }
 
 output "eip_public_ip" {
-  value = data.aws_eips.wordpress.public_ips[0]
-}
-
-output "wordpress_db_secrets" {
-  value     = jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string)
-  sensitive = true
+  description = "Adresse IP de l'Elastic IP"
+  value       = var.eip_id
 }

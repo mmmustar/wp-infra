@@ -1,4 +1,3 @@
-# environments/prod/versions.tf
 terraform {
   required_version = ">= 1.0.0"
 
@@ -7,16 +6,18 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    local = {
+      source = "hashicorp/local"
+    }
   }
 }
 
 provider "aws" {
-  region = var.aws_region
-  
+ 
   default_tags {
     tags = {
-      Project     = var.project_name
-      ManagedBy   = "terraform"
+      Project   = var.project_name
+      ManagedBy = "terraform"
     }
   }
 }
