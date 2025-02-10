@@ -1,13 +1,3 @@
-terraform {
-  backend "s3" {
-    bucket         = "wordpress-mmustar-terraform-state"
-    key            = "environments/prod/terraform.tfstate"
-    region         = "eu-west-3"
-    dynamodb_table = "wordpress-mmustar-terraform-locks"
-    encrypt        = true
-  }
-}
-
 provider "aws" {
   region = var.aws_region
   
@@ -83,12 +73,15 @@ module "compute" {
   source            = "../modules/compute"
   environment       = var.environment
   project_name      = var.project_name
-  vpc_id            = data.aws_vpc.existing.id
-  subnet_id         = aws_subnet.compute.id
-  security_group_id = module.security.wordpress_sg_id
-  instance_type     = "t3.medium"
-  key_name          = "test-aws-key-pair-new"
+  vpc_id            = var.vpc_id
+  subnet_id         = var.subnet_id
+  security_group_id = var.security_group_id
+  instance_type     = var.instance_type
+  key_name          = var.key_name
+  ami_id            = data.aws_ami.ubuntu.id  
+  aws_account_id    = "730335289383"
 }
+
 
 # 🔹 Association de l'Elastic IP à l'instance EC2
 resource "aws_eip_association" "wordpress_eip_assoc" {

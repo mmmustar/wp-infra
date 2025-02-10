@@ -1,13 +1,3 @@
-variable "environment" {
-  description = "Nom de l'environnement (test/prod)"
-  type        = string
-}
-
-variable "project_name" {
-  description = "Nom du projet pour le tagging"
-  type        = string
-}
-
 variable "vpc_id" {
   description = "ID du VPC où sera créée l'instance EC2"
   type        = string
