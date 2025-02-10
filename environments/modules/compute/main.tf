@@ -47,7 +47,12 @@ resource "aws_iam_role" "ec2_wordpress_role" {
 resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
   name = "EC2WordPressProfile"
   role = aws_iam_role.ec2_wordpress_role.name
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
+
 
 // 🔹 Outputs
 output "instance_id" {

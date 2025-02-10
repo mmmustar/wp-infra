@@ -1,3 +1,13 @@
+variable "environment" {
+  description = "Nom de l'environnement (test/prod)"
+  type        = string
+}
+
+variable "project_name" {
+  description = "Nom du projet pour le tagging"
+  type        = string
+}
+
 variable "vpc_id" {
   description = "ID du VPC où sera créée l'instance EC2"
   type        = string
@@ -29,8 +39,7 @@ variable "ami_id" {
   type        = string
 }
 
-variable "aws_region" {
-  description = "AWS Region"
+variable "eip_id" {
+  description = "Elastic IP allocation ID"
   type        = string
-  default     = "eu-west-3"
 }
