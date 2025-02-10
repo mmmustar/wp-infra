@@ -1,0 +1,5 @@
+# ansible/inventory/group_vars/all.yml
+---
+k3s_version: v1.28.2+k3s1
+nginx_ingress_enabled: true
+environment: "{{ lookup('env', 'ENVIRONMENT') | default('prod', true) }}"
