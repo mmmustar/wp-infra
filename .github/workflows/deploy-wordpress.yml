@@ -1,5 +1,5 @@
 name: Deploy WordPress on EC2
-
+#test
 on:
   push:
     branches:
