@@ -31,7 +31,6 @@ module "compute" {
   instance_type     = var.instance_type
   key_name          = var.key_name
   ami_id            = data.aws_ami.ubuntu.id  
-  aws_account_id    = "730335289383"
 }
 
 resource "aws_eip_association" "wordpress_eip_assoc" {

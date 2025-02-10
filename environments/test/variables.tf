@@ -1,6 +1,7 @@
 variable "environment" {
-  description = "Nom de l'environnement (test/prod)"
+  description = "Nom de l'environnement (test)"
   type        = string
+  default     = "test"
 }
 
 variable "project_name" {
@@ -19,7 +20,7 @@ variable "subnet_id" {
 }
 
 variable "security_group_id" {
-  description = "Groupe de sécurité pour l'instance EC2"
+  description = "ID du groupe de sécurité pour l'instance EC2"
   type        = string
 }
 
@@ -36,5 +37,10 @@ variable "key_name" {
 
 variable "ami_id" {
   description = "AMI ID utilisé pour l'instance EC2"
+  type        = string
+}
+
+variable "eip_id" {
+  description = "Elastic IP allocation ID"
   type        = string
 }
