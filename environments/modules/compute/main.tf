@@ -1,4 +1,4 @@
-// 🔹 Sélection de l'AMI Ubuntu 20.04 LTS *
+// 🔹 Sélection de l'AMI Ubuntu 20.04 LTS
 data "aws_ami" "ubuntu" {
   most_recent = true
   owners      = ["099720109477"]  // Canonical
