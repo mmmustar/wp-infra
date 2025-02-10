@@ -1,165 +1,51 @@
-name: Deploy WordPress Infrastructure
-
-on:
-  push:
-    branches: [ main, develop ]
-  pull_request:
-    branches: [ main ]
-
-env:
-  AWS_REGION: eu-west-3
-  PROJECT_NAME: wordpress-mmustar
-  TERRAFORM_VERSION: "1.5.0"
-
-jobs:
-  validate:
-    name: Validate Infrastructure
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-      
-      - name: Terraform Format Check
-        run: terraform fmt -check -recursive ./environments/
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: Install yamllint
-        run: |
-          pip install yamllint
-          yamllint ./helm/
-
-  plan:
-    name: Plan Infrastructure Changes
-    needs: validate
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        environment: [test, prod]
-    
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-      - name: Terraform Init
-        run: |
-          cd environments/${{ matrix.environment }}
-          terraform init
-
-      - name: Terraform Plan
-        id: plan
-        run: |
-          cd environments/${{ matrix.environment }}
-          terraform plan -var="environment=${{ matrix.environment }}" -var="project_name=${{ env.PROJECT_NAME }}" -out=tfplan
-        continue-on-error: true
-
-      - name: Upload Terraform Plan
-        uses: actions/upload-artifact@v3
-        with:
-          name: tfplan-${{ matrix.environment }}
-          path: environments/${{ matrix.environment }}/tfplan
-
-  deploy:
-    name: Deploy Infrastructure
-    needs: plan
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-    strategy:
-      matrix:
-        environment: [test, prod]
-        include:
-          - environment: test
-            if: github.ref == 'refs/heads/develop'
-          - environment: prod
-            if: github.ref == 'refs/heads/main'
-    
-    environment:
-      name: ${{ matrix.environment }}
-    
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: ${{ env.TERRAFORM_VERSION }}
-
-      - name: Download Terraform Plan
-        uses: actions/download-artifact@v3
-        with:
-          name: tfplan-${{ matrix.environment }}
-          path: environments/${{ matrix.environment }}
-
-      - name: Terraform Init
-        run: |
-          cd environments/${{ matrix.environment }}
-          terraform init
-
-      - name: Terraform Apply
-        run: |
-          cd environments/${{ matrix.environment }}
-          terraform apply -auto-approve tfplan
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.9'
-
-      - name: Install Ansible
-        run: |
-          python -m pip install --upgrade pip
-          pip install ansible-core ansible boto3 botocore
-
-      - name: Configure SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-
-      - name: Run Ansible Playbook
-        env:
-          ANSIBLE_HOST_KEY_CHECKING: "false"
-          WORDPRESS_DB_HOST: ${{ secrets.WORDPRESS_DB_HOST }}
-          WORDPRESS_DB_USER: ${{ secrets.WORDPRESS_DB_USER }}
-          WORDPRESS_DB_PASSWORD: ${{ secrets.WORDPRESS_DB_PASSWORD }}
-          WORDPRESS_DB_NAME: ${{ secrets.WORDPRESS_DB_NAME }}
-          MYSQL_PORT: ${{ secrets.MYSQL_PORT }}
-          WP_ID: ${{ secrets.WP_ID }}
-        run: |
-          cd ansible
-          ansible-playbook -i inventory/hosts_${{ matrix.environment }}.yml site.yml
-
-      - name: Deploy WordPress with Helm
-        if: success()
-        run: |
-          KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-          helm upgrade --install wordpress ./helm/wordpress \
-            --namespace ${{ matrix.environment }} \
-            --create-namespace \
-            --set env.domain=${{ matrix.environment == 'prod' && 'mmustar.fr' || 'test.mmustar.fr' }} \
-            --values ./helm/wordpress/values-${{ matrix.environment }}.yaml
+# ansible/roles/k3s/tasks/main.yml
+---
+ - name: Install required packages
+   apt:
+      name: 
+        - apt-transport-https
+        - ca-certificates
+        - curl
+        - software-properties-common
+      state: present
+      update_cache: yes
+  
+ - name: Download K3s install script
+   get_url:
+      url: https://get.k3s.io
+      dest: /tmp/k3s-install.sh
+      mode: '0755'
+  
+ - name: Install K3s
+   shell: |
+      INSTALL_K3S_EXEC="server \
+        --disable traefik \
+        --disable servicelb \
+        --tls-san {{ inventory_hostname }} \
+        --write-kubeconfig-mode 644 \
+        --node-name {{ inventory_hostname }}" \
+      sh /tmp/k3s-install.sh
+   args:
+      creates: /usr/local/bin/k3s
+  
+ - name: Wait for node to be ready
+   shell: kubectl wait --for=condition=Ready nodes --all --timeout=300s
+   changed_when: false
+  
+ - name: Install Helm
+   shell: |
+      curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+   args:
+      creates: /usr/local/bin/helm
+  
+ - name: Add nginx-ingress repository
+   shell: helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+  
+ - name: Install nginx-ingress
+       shell: |
+      helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+        --namespace ingress-nginx \
+        --create-namespace \
+        --set controller.service.type=NodePort \
+        --set controller.service.nodePorts.http=30080 \
+        --set controller.service.nodePorts.https=30443
