@@ -1,0 +1,49 @@
+name: Deploy WordPress on EC2
+
+on:
+  push:
+    branches:
+      - main
+      - prod
+      - develop
+      - feature/*
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Determine environment
+      id: env
+      run: |
+        if [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
+          echo "DEPLOY_ENV=prod" >> $GITHUB_ENV
+          echo "DOMAIN=mmustar.fr" >> $GITHUB_ENV
+          echo "EC2_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
+        else
+          echo "DEPLOY_ENV=test" >> $GITHUB_ENV
+          echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
+          echo "EC2_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
+        fi
+
+    - name: Setup SSH
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+        ssh-keyscan -H $EC2_IP >> ~/.ssh/known_hosts
+
+    - name: Upload secrets to EC2
+      run: |
+        scp -i ~/.ssh/id_rsa secrets.json ${{ secrets.EC2_USER }}@$EC2_IP:/home/${{ secrets.EC2_USER }}/secrets.json
+
+    - name: Deploy WordPress
+      run: |
+        scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ${{ secrets.EC2_USER }}@$EC2_IP:/home/${{ secrets.EC2_USER }}/deploy_wordpress.sh
+        ssh -i ~/.ssh/id_rsa ${{ secrets.EC2_USER }}@$EC2_IP "chmod +x /home/${{ secrets.EC2_USER }}/deploy_wordpress.sh && sudo /home/${{ secrets.EC2_USER }}/deploy_wordpress.sh"
+
+    - name: Deployment complete
+      run: echo "✅ WordPress deployed on $DOMAIN"
