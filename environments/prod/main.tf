@@ -20,7 +20,7 @@ resource "local_file" "secrets_json" {
   filename = "${path.module}/secrets.json"
 }
 
-# 🔹 Déploiement du module Compute (EC2)
+# 🔹 Déploiement du module Compute
 module "compute" {
   source            = "../modules/compute"
   environment       = var.environment
