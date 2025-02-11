@@ -16,24 +16,6 @@ data "aws_ami" "ubuntu" {
 }
 
 //////////////////////////////
-// 🔹 Création du rôle IAM pour EC2
-//////////////////////////////
-resource "aws_iam_role" "ec2_wordpress_role" {
-  name = "EC2-WordPress-Access-${var.environment}"
-
-  assume_role_policy = jsonencode({
-    Version   = "2012-10-17"
-    Statement = [{
-      Action    = "sts:AssumeRole"
-      Effect    = "Allow"
-      Principal = {
-        Service = "ec2.amazonaws.com"
-      }
-    }]
-  })
-}
-
-//////////////////////////////
 // 🔹 Création de la policy IAM pour accéder à Secrets Manager
 //////////////////////////////resource "aws_iam_policy" "secrets_manager_read" {
 resource "aws_iam_policy" "secrets_manager_read" {
@@ -60,13 +42,7 @@ resource "aws_iam_role_policy_attachment" "attach_secrets_policy" {
   policy_arn = aws_iam_policy.secrets_manager_read.arn
 }
 
-//////////////////////////////
-// 🔹 Création du profile IAM pour l'instance EC2
-//////////////////////////////
-resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
-  name = "EC2WordPressProfile-${var.environment}"
-  role = aws_iam_role.ec2_wordpress_role.name
-}
+
 
 //////////////////////////////
 // 🔹 Création de l'instance EC2 WordPress
