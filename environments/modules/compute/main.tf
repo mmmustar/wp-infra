@@ -1,54 +1,45 @@
-/*
- * Module Compute : Déploiement d'une instance EC2 WordPress
- * avec création du rôle IAM, de sa policy et de l'instance profile associés.
- */
-
-//////////////////////////////
-// 🔹 Sélection de l'AMI Ubuntu 20.04 LTS
-//////////////////////////////
+# 🔹 Sélection de l'AMI Ubuntu 20.04 LTS ...
 data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["099720109477"]  // Canonical
+  owners      = ["099720109477"]  # Canonical
+  
   filter {
     name   = "name"
     values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
   }
 }
 
-//////////////////////////////
-// 🔹 Création de la policy IAM pour accéder à Secrets Manager
-//////////////////////////////resource "aws_iam_policy" "secrets_manager_read" {
-resource "aws_iam_policy" "secrets_manager_read" {
-  name        = "EC2SecretsManagerReadOnly-${var.environment}"
-  description = "Permission de lecture seule sur AWS Secrets Manager"
-  policy      = jsonencode({
-    Version   = "2012-10-17"
+# 🔹 Création du rôle IAM pour l'EC2
+resource "aws_iam_role" "ec2_wordpress_role" {
+  name = "${var.project_name}-${var.environment}-EC2WordPressProfile"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
     Statement = [{
-      Action   = [
-        "secretsmanager:GetSecretValue",
-        "secretsmanager:DescribeSecret"
-      ]
-      Effect   = "Allow"
-      Resource = "*"
+      Effect = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
     }]
   })
+  
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
-//////////////////////////////
-// 🔹 Attachement de la policy IAM au rôle EC2
-//////////////////////////////
-resource "aws_iam_role_policy_attachment" "attach_secrets_policy" {
-  role       = aws_iam_role.ec2_wordpress_role.name  
-  policy_arn = aws_iam_policy.secrets_manager_read.arn
+# 🔹 Attachement de la politique IAM à l'EC2
+resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
+  name = "${var.project_name}-${var.environment}-EC2WordPressProfile"
+  role = aws_iam_role.ec2_wordpress_role.name
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
-
-
-//////////////////////////////
-// 🔹 Création de l'instance EC2 WordPress
-//////////////////////////////
+# 🔹 Création de l'instance EC2 WordPress
 resource "aws_instance" "wordpress" {
-  ami                    = var.ami_id
+  ami                    = data.aws_ami.ubuntu.id  # Utilisation de l'AMI Ubuntu trouvée
   instance_type          = var.instance_type
   subnet_id              = var.subnet_id
   key_name               = var.key_name
@@ -67,39 +58,11 @@ resource "aws_instance" "wordpress" {
   }
 }
 
-// 🔹 Création du rôle IAM pour l'EC2
-resource "aws_iam_role" "ec2_wordpress_role" {
-  name = "EC2-WordPress-Access"
-
-  assume_role_policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [{
-      Effect = "Allow"
-      Principal = { Service = "ec2.amazonaws.com" }
-      Action = "sts:AssumeRole"
-    }]
-  })
-}
-
-// 🔹 Attachement de la politique IAM à l'EC2 
-resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
-  name = "EC2WordPressProfile"
-  role = aws_iam_role.ec2_wordpress_role.name
-
-  lifecycle {
-    ignore_changes = [name]
-  }
-}
-
-
-// 🔹 Outputs
-//////////////////////////////
+# 🔹 Outputs
 output "instance_id" {
-  description = "ID de l'instance EC2 WordPress"
-  value       = aws_instance.wordpress.id
+  value = aws_instance.wordpress.id
 }
 
 output "instance_public_ip" {
-  description = "Adresse IP publique de l'instance EC2"
-  value       = aws_instance.wordpress.public_ip
+  value = aws_instance.wordpress.public_ip
 }
