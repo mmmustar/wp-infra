@@ -3,7 +3,8 @@ name: Deploy WordPress on EC2
 on:
   push:
     branches:
-      - '*'
+      - 'main'
+      - 'prod'
 
 jobs:
   deploy:
@@ -36,9 +37,14 @@ jobs:
           scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa environments/${{ env.DEPLOY_ENV }}/secrets.json ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
 
-          - name: 🏗️ Exécuter le script de déploiement sur l'EC2
-          run: |
-            ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "export DEPLOY_ENV=${{ env.DEPLOY_ENV }} && chmod +x /home/ubuntu/deploy_wordpress.sh && sudo -E /home/ubuntu/deploy_wordpress.sh"
-            
+      - name: 🏗️ Exécuter le script de déploiement sur l'EC2
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "export DEPLOY_ENV=${{ env.DEPLOY_ENV }} && chmod +x /home/ubuntu/deploy_wordpress.sh && sudo -E /home/ubuntu/deploy_wordpress.sh"
+
+      - name: 🚫 Désactiver la configuration 'default' et redémarrer Nginx (prod uniquement)
+        if: env.DEPLOY_ENV == 'prod'
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "sudo rm -f /etc/nginx/sites-enabled/default && sudo systemctl restart nginx"
+
       - name: ✅ Déploiement terminé
         run: echo "Déploiement effectué sur ${{ env.DEPLOY_ENV }}"
