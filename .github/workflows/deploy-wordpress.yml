@@ -21,6 +21,12 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.EC2_IP_TEST }} ${{ secrets.EC2_IP_PROD }} >> ~/.ssh/known_hosts
 
+      - name: 🌱 Create Cloudflare certificate files from secrets
+        run: |
+          mkdir -p scripts
+          echo "${{ secrets.CLOUDFLARE_ORIGIN_CRT }}" > scripts/cloudflare_origin.crt
+          echo "${{ secrets.CLOUDFLARE_ORIGIN_KEY }}" > scripts/cloudflare_origin.key
+
       - name: 🌍 Déterminer l'environnement de déploiement
         id: set-env
         run: |
