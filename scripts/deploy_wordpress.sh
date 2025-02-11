@@ -120,7 +120,8 @@ fi
 
 wget $WP_URL -P /tmp/
 tar -xzf /tmp/latest.tar.gz -C /var/www/
-mv /var/www/wordpress/* $wordpress_dir/
+# Utilisation de rsync pour copier et fusionner les fichiers dans le dossier cible
+rsync -av --remove-source-files /var/www/wordpress/ $wordpress_dir/
 rm -rf /var/www/wordpress /tmp/latest.tar.gz
 
 # 🔹 Configuration de WordPress
