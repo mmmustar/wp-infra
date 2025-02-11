@@ -41,7 +41,6 @@ if [ -z "$PHP_FPM_VERSION" ]; then
     # Installation de PHP-FPM et des modules requis
     apt install -y php-fpm \
         php-curl \
-        php-dom \
         php-imagick \
         php-mbstring \
         php-zip \
@@ -49,8 +48,7 @@ if [ -z "$PHP_FPM_VERSION" ]; then
         php-intl \
         php-xml \
         php-xmlrpc \
-        php-soap \
-        php-opcache
+        php-soap
 
     # Vérification de la version installée
     PHP_FPM_VERSION=$(ls /etc/init.d/ | grep -E '^php[0-9]+(\.[0-9]+)?-fpm' | head -n 1 | sed 's/-fpm//')
@@ -98,9 +96,9 @@ echo "🔹 Déploiement pour le domaine : $domain_name"
 echo "🔹 Installation des paquets..."
 apt update && apt install -y nginx mariadb-server \
     php php-fpm php-mysql unzip wget curl jq \
-    php-curl php-dom php-imagick php-mbstring \
+    php-curl php-imagick php-mbstring \
     php-zip php-gd php-intl php-xml php-xmlrpc \
-    php-soap php-opcache
+    php-soap
 
 # 🔹 Configuration de MariaDB
 echo "🔹 Configuration de MariaDB..."
