@@ -38,8 +38,17 @@ if [ -z "$PHP_FPM_VERSION" ]; then
     add-apt-repository -y ppa:ondrej/php
     apt update
 
-    # Installation de PHP-FPM
-    apt install -y php-fpm
+    # Installation de PHP-FPM et des modules requis
+    apt install -y php-fpm \
+        php-curl \
+        php-imagick \
+        php-mbstring \
+        php-zip \
+        php-gd \
+        php-intl \
+        php-xml \
+        php-xmlrpc \
+        php-soap
 
     # Vérification de la version installée
     PHP_FPM_VERSION=$(ls /etc/init.d/ | grep -E '^php[0-9]+(\.[0-9]+)?-fpm' | head -n 1 | sed 's/-fpm//')
@@ -73,13 +82,23 @@ MYSQL_ROOT_PASSWORD=$(jq -r '.MYSQL_ROOT_PASSWORD' "$SECRETS_FILE")
 MYSQL_HOST=$(jq -r '.MYSQL_HOST' "$SECRETS_FILE")
 MYSQL_PORT=$(jq -r '.MYSQL_PORT' "$SECRETS_FILE")
 
-# 🔹 Variables système
-domain_name="test.mmustar.fr"
+# 🔹 Variables système et détection de l'environnement
+if [ "$DEPLOY_ENV" = "prod" ]; then
+    domain_name="mmustar.fr"
+else
+    domain_name="test.mmustar.fr"
+fi
 wordpress_dir="/var/www/html"
+
+echo "🔹 Déploiement pour le domaine : $domain_name"
 
 # 🔹 Installation des paquets nécessaires
 echo "🔹 Installation des paquets..."
-apt update && apt install -y nginx mariadb-server php php-fpm php-mysql unzip wget curl jq
+apt update && apt install -y nginx mariadb-server \
+    php php-fpm php-mysql unzip wget curl jq \
+    php-curl php-imagick php-mbstring \
+    php-zip php-gd php-intl php-xml php-xmlrpc \
+    php-soap
 
 # 🔹 Configuration de MariaDB
 echo "🔹 Configuration de MariaDB..."
@@ -118,7 +137,15 @@ server {
     server_name $domain_name www.$domain_name;
     root /var/www/html;
 
+    # Optimisation des performances
+    client_max_body_size 64M;
+
+    # Compression gzip
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
     index index.php index.html index.htm;
+    
     location / {
         try_files \$uri \$uri/ /index.php?\$args;
     }
@@ -128,11 +155,20 @@ server {
         fastcgi_pass unix:/run/php/$PHP_FPM_VERSION-fpm.sock;
         fastcgi_index index.php;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+    }
+
+    # Cache statique
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
+        expires max;
+        log_not_found off;
     }
 }
 EOF
 
 ln -sf /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/
+rm -f /etc/nginx/sites-enabled/default  # Suppression de la configuration par défaut
 
 # 🔹 Vérification et redémarrage de Nginx
 if nginx -t; then
@@ -151,6 +187,11 @@ else
     echo "❌ Erreur : PHP-FPM ne fonctionne pas !"
     exit 1
 fi
+
+# 🔹 Configuration des permissions
+chown -R www-data:www-data $wordpress_dir
+find $wordpress_dir -type d -exec chmod 755 {} \;
+find $wordpress_dir -type f -exec chmod 644 {} \;
 
 # 🔹 Vérification finale
 echo "✅ WordPress est installé sur http://$domain_name"

@@ -31,17 +31,11 @@ module "compute" {
   instance_type     = var.instance_type
   key_name          = var.key_name
   ami_id            = data.aws_ami.ubuntu.id  
-  aws_account_id    = "730335289383"
 }
 
 resource "aws_eip_association" "wordpress_eip_assoc" {
   instance_id   = module.compute.instance_id
   allocation_id = var.eip_id
-}
-
-variable "eip_id" {
-  description = "ID de l'Elastic IP à associer à l'instance"
-  type        = string
 }
 
 # 🔹 Outputs

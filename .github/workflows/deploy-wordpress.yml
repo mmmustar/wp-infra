@@ -1,9 +1,10 @@
 name: Deploy WordPress on EC2
-#test
+
 on:
   push:
     branches:
-      - '*'
+      - prod
+      - main
 
 jobs:
   deploy:
@@ -26,14 +27,14 @@ jobs:
           if [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
             echo "DEPLOY_ENV=prod" >> $GITHUB_ENV
             echo "EC2_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
-          else
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "DEPLOY_ENV=test" >> $GITHUB_ENV
             echo "EC2_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
           fi
 
       - name: 🚀 Copier les fichiers sur l'EC2
         run: |
-          scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
           if [ "${{ env.DEPLOY_ENV }}" = "prod" ]; then
             scp -i ~/.ssh/id_rsa environments/prod/secrets.json ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
           else
