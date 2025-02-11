@@ -33,3 +33,5 @@ terraform.rc
 repomix-output.txt
 vault.yml
 secrets.jsonrepomix-output.txt
+cloudflare_origin.crt
+cloudflare_origin.key

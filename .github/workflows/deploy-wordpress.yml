@@ -35,6 +35,8 @@ jobs:
       - name: 🚀 Copier les fichiers sur l'EC2
         run: |
           scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/cloudflare_origin.crt ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/cloudflare_origin.key ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
           if [ "${{ env.DEPLOY_ENV }}" = "prod" ]; then
             scp -i ~/.ssh/id_rsa environments/prod/secrets.json ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
           else

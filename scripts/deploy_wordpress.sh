@@ -33,28 +33,46 @@ PHP_FPM_VERSION=$(ls /etc/init.d/ | grep -E '^php[0-9]+(\.[0-9]+)?-fpm' | head -
 
 if [ -z "$PHP_FPM_VERSION" ]; then
     echo "❌ Aucune version de PHP-FPM trouvée. Installation de PHP depuis les dépôts officiels..."
-    # Ajout du dépôt si nécessaire pour obtenir une version récente (ici php8.1)
+    
+    # Ajout du dépôt si nécessaire
     add-apt-repository -y ppa:ondrej/php
     apt update
-    # Installation de PHP8.1 et des modules requis
-    apt install -y php8.1-cli php8.1-common php8.1-fpm php8.1-mysql php8.1-curl php8.1-imagick php8.1-mbstring php8.1-zip php8.1-gd php8.1-intl php8.1-xml php8.1-xmlrpc php8.1-soap
-    # Mise à jour de la variable
-    PHP_FPM_VERSION="php8.1"
+
+    # Installation de PHP-FPM et des modules requis
+    apt install -y php-fpm \
+        php-curl \
+        php-imagick \
+        php-mbstring \
+        php-zip \
+        php-gd \
+        php-intl \
+        php-xml \
+        php-xmlrpc \
+        php-soap
+
+    # Vérification de la version installée
+    PHP_FPM_VERSION=$(ls /etc/init.d/ | grep -E '^php[0-9]+(\.[0-9]+)?-fpm' | head -n 1 | sed 's/-fpm//')
+
+    if [ -z "$PHP_FPM_VERSION" ]; then
+        echo "❌ Impossible d'installer PHP-FPM !"
+        exit 1
+    fi
 fi
 
 PHP_FPM_SERVICE="${PHP_FPM_VERSION}-fpm"
 
 echo "🔹 PHP-FPM détecté : $PHP_FPM_SERVICE"
 
-# 🔹 Assurer l'activation et le démarrage de PHP-FPM
+# 🔹 Vérifier et activer PHP-FPM
 systemctl enable $PHP_FPM_SERVICE
 systemctl start $PHP_FPM_SERVICE
 
-# 🔹 Installation des paquets système et des modules PHP (version spécifiques)
-apt update
-apt install -y nginx mariadb-server unzip wget curl jq
-# Si la version de PHP était déjà présente, on installe ses modules spécifiques
-apt install -y ${PHP_FPM_VERSION}-cli ${PHP_FPM_VERSION}-common ${PHP_FPM_VERSION}-fpm ${PHP_FPM_VERSION}-mysql ${PHP_FPM_VERSION}-curl ${PHP_FPM_VERSION}-imagick ${PHP_FPM_VERSION}-mbstring ${PHP_FPM_VERSION}-zip ${PHP_FPM_VERSION}-gd ${PHP_FPM_VERSION}-intl ${PHP_FPM_VERSION}-xml ${PHP_FPM_VERSION}-xmlrpc ${PHP_FPM_VERSION}-soap
+# 🔹 Copier et installer le certificat d'origine Cloudflare
+echo "🔹 Installation du certificat Cloudflare..."
+sudo mkdir -p /etc/ssl/cloudflare
+sudo cp /home/ubuntu/cloudflare_origin.crt /etc/ssl/cloudflare/cloudflare_origin.crt
+sudo cp /home/ubuntu/cloudflare_origin.key /etc/ssl/cloudflare/cloudflare_origin.key
+sudo chmod 600 /etc/ssl/cloudflare/cloudflare_origin.key
 
 # 🔹 Vérification et création du fichier de secrets
 SECRETS_FILE="/home/ubuntu/secrets.json"
@@ -63,7 +81,7 @@ if [ ! -f "$SECRETS_FILE" ]; then
     exit 1
 fi
 
-# 🔹 Lecture des secrets depuis le fichier JSON
+# 🔹 Lire les secrets depuis le fichier JSON
 MYSQL_DATABASE=$(jq -r '.MYSQL_DATABASE' "$SECRETS_FILE")
 MYSQL_USER=$(jq -r '.MYSQL_USER' "$SECRETS_FILE")
 MYSQL_PASSWORD=$(jq -r '.MYSQL_PASSWORD' "$SECRETS_FILE")
@@ -71,7 +89,7 @@ MYSQL_ROOT_PASSWORD=$(jq -r '.MYSQL_ROOT_PASSWORD' "$SECRETS_FILE")
 MYSQL_HOST=$(jq -r '.MYSQL_HOST' "$SECRETS_FILE")
 MYSQL_PORT=$(jq -r '.MYSQL_PORT' "$SECRETS_FILE")
 
-# 🔹 Détection de l'environnement et définition du domaine
+# 🔹 Variables système et détection de l'environnement
 if [ "$DEPLOY_ENV" = "prod" ]; then
     domain_name="mmustar.fr"
 else
@@ -80,6 +98,14 @@ fi
 wordpress_dir="/var/www/html"
 
 echo "🔹 Déploiement pour le domaine : $domain_name"
+
+# 🔹 Installation des paquets nécessaires
+echo "🔹 Installation des paquets..."
+apt update && apt install -y nginx mariadb-server \
+    php php-fpm php-mysql unzip wget curl jq \
+    php-curl php-imagick php-mbstring \
+    php-zip php-gd php-intl php-xml php-xmlrpc \
+    php-soap
 
 # 🔹 Configuration de MariaDB
 echo "🔹 Configuration de MariaDB..."
@@ -101,32 +127,43 @@ fi
 
 wget $WP_URL -P /tmp/
 tar -xzf /tmp/latest.tar.gz -C /var/www/
-# Copie des fichiers WordPress dans le dossier cible
+# Utilisation de rsync pour copier et fusionner les fichiers dans le dossier cible
 rsync -av --remove-source-files /var/www/wordpress/ $wordpress_dir/
 rm -rf /var/www/wordpress /tmp/latest.tar.gz
 
-# 🔹 Configuration de WordPress : copie du fichier de config
+# 🔹 Configuration de WordPress
 cp $wordpress_dir/wp-config-sample.php $wordpress_dir/wp-config.php
 sed -i "s/database_name_here/$MYSQL_DATABASE/" $wordpress_dir/wp-config.php
 sed -i "s/username_here/$MYSQL_USER/" $wordpress_dir/wp-config.php
 sed -i "s/password_here/$MYSQL_PASSWORD/" $wordpress_dir/wp-config.php
+# Insérer les définitions pour WP_HOME et WP_SITEURL en HTTPS
+sed -i "/^\/\* That's all, stop editing! \*\//i define('WP_HOME', 'https://$domain_name');\ndefine('WP_SITEURL', 'https://$domain_name');" $wordpress_dir/wp-config.php
 
-# 🔹 Forcer l'utilisation du protocole HTTP pour WordPress
-# Ces définitions empêchent WordPress de tenter une connexion HTTPS pour son REST API
-sed -i "/^\/\* That's all, stop editing! \*\//i define('WP_HOME', 'http://$domain_name');\ndefine('WP_SITEURL', 'http://$domain_name');" $wordpress_dir/wp-config.php
-
-# 🔹 Configuration de Nginx
-echo "🔹 Configuration de Nginx..."
+# 🔹 Configuration de Nginx pour HTTPS
+echo "🔹 Configuration de Nginx pour HTTPS..."
 tee /etc/nginx/sites-available/wordpress > /dev/null <<EOF
+# Redirection HTTP vers HTTPS
 server {
     listen 80;
     server_name $domain_name www.$domain_name;
-    root /var/www/html;
+    return 301 https://\$host\$request_uri;
+}
 
-    # Optimisation des performances
+# Serveur HTTPS
+server {
+    listen 443 ssl;
+    server_name $domain_name www.$domain_name;
+    root $wordpress_dir;
+
+    ssl_certificate /etc/ssl/cloudflare/cloudflare_origin.crt;
+    ssl_certificate_key /etc/ssl/cloudflare/cloudflare_origin.key;
+
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+
     client_max_body_size 64M;
-
-    # Compression gzip
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
 
@@ -145,7 +182,6 @@ server {
         fastcgi_buffer_size 32k;
     }
 
-    # Cache statique
     location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
         expires max;
         log_not_found off;
@@ -165,7 +201,7 @@ else
     exit 1
 fi
 
-# 🔹 Redémarrage de PHP-FPM
+# 🔹 Vérifier et redémarrer PHP-FPM
 systemctl restart $PHP_FPM_SERVICE
 if systemctl is-active --quiet $PHP_FPM_SERVICE; then
     echo "✅ PHP-FPM fonctionne correctement."
@@ -174,10 +210,10 @@ else
     exit 1
 fi
 
-# 🔹 Configuration des permissions sur les fichiers WordPress
+# 🔹 Configuration des permissions
 chown -R www-data:www-data $wordpress_dir
 find $wordpress_dir -type d -exec chmod 755 {} \;
 find $wordpress_dir -type f -exec chmod 644 {} \;
 
 # 🔹 Vérification finale
-echo "✅ WordPress est installé sur http://$domain_name"
+echo "✅ WordPress est installé sur https://$domain_name"
