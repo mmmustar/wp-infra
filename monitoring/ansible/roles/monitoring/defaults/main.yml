@@ -1,0 +1,9 @@
+# monitoring/ansible/roles/monitoring/defaults/main.yml
+---
+monitoring_namespace: "monitoring-{{ environment }}"
+grafana_domain: "monitoring.{{ domain_name }}"
+grafana_admin_password: admin  # À changer via les secrets
+storage_class: "ebs-sc"
+prometheus_retention: "15d"
+prometheus_storage_size: "10Gi"
+grafana_storage_size: "5Gi"

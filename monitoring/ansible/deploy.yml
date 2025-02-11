@@ -1,0 +1,23 @@
+# monitoring/ansible/deploy.yml
+---
+- name: Deploy Monitoring Stack
+  hosts: monitoring
+  gather_facts: true
+  become: true
+  vars:
+    monitoring_namespace: "monitoring-{{ environment }}"
+    storage_class: "ebs-sc"
+
+  pre_tasks:
+    - name: Vérifier la configuration K3s
+      stat:
+        path: /etc/rancher/k3s/k3s.yaml
+      register: k3s_config
+
+    - name: Echec si K3s n'est pas installé
+      fail:
+        msg: "K3s n'est pas installé sur ce serveur"
+      when: not k3s_config.stat.exists
+
+  roles:
+    - monitoring

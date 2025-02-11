@@ -1,0 +1,88 @@
+# monitoring/ansible/roles/monitoring/tasks/main.yml
+---
+- name: S'assurer que le namespace existe
+  kubernetes.core.k8s:
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    state: present
+    definition:
+      apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: "{{ monitoring_namespace }}"
+        labels:
+          environment: "{{ environment }}"
+
+- name: Ajouter le repo Helm pour Prometheus
+  kubernetes.core.helm_repository:
+    name: prometheus-community
+    repo_url: https://prometheus-community.github.io/helm-charts
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+- name: Ajouter le repo Helm pour Grafana
+  kubernetes.core.helm_repository:
+    name: grafana
+    repo_url: https://grafana.github.io/helm-charts
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+
+- name: Update Helm repos
+  shell: helm repo update
+  environment:
+    KUBECONFIG: /etc/rancher/k3s/k3s.yaml
+
+- name: Installer Prometheus
+  kubernetes.core.helm:
+    name: prometheus
+    chart_ref: prometheus-community/prometheus
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    values:
+      server:
+        persistentVolume:
+          storageClass: "{{ storage_class }}"
+          size: "{{ prometheus_storage_size }}"
+        retention: "{{ prometheus_retention }}"
+
+- name: Installer Grafana
+  kubernetes.core.helm:
+    name: grafana
+    chart_ref: grafana/grafana
+    release_namespace: "{{ monitoring_namespace }}"
+    create_namespace: true
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+    values:
+      persistence:
+        enabled: true
+        storageClassName: "{{ storage_class }}"
+        size: "{{ grafana_storage_size }}"
+      adminPassword: "{{ grafana_admin_password }}"
+      ingress:
+        enabled: true
+        ingressClassName: nginx
+        hosts:
+          - "{{ grafana_domain }}"
+      datasources:
+        datasources.yaml:
+          apiVersion: 1
+          datasources:
+            - name: Prometheus
+              type: prometheus
+              url: http://prometheus-server.{{ monitoring_namespace }}.svc.cluster.local
+              access: proxy
+              isDefault: true
+
+- name: Attendre que Grafana soit prêt
+  kubernetes.core.k8s_info:
+    kind: Pod
+    namespace: "{{ monitoring_namespace }}"
+    label_selectors:
+      - app.kubernetes.io/name=grafana
+    kubeconfig: /etc/rancher/k3s/k3s.yaml
+  register: grafana_pods
+  until: grafana_pods.resources | length > 0 and grafana_pods.resources[0].status.phase == "Running"
+  retries: 30
+  delay: 10
+
+- name: Afficher l'URL de Grafana
+  debug:
+    msg: "Grafana sera accessible à l'adresse: https://{{ grafana_domain }}"
