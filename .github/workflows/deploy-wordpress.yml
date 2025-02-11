@@ -1,50 +1,222 @@
-name: Deploy WordPress on EC2
+# .gitlab-ci.yml
 
-on:
-  push:
-    branches:
-      - 'main'
-      - 'prod'
+image: ubuntu:20.04
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
+stages:
+  - deploy
 
-    steps:
-      - name: 📥 Checkout repository
-        uses: actions/checkout@v3
+deploy:
+  stage: deploy
+  before_script:
+    - apt-get update -y && apt-get install -y software-properties-common
+  script: |
+    #!/bin/bash
+    set -e
 
-      - name: 🔑 Setup SSH Key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -H ${{ secrets.EC2_IP_TEST }} ${{ secrets.EC2_IP_PROD }} >> ~/.ssh/known_hosts
+    echo "🚀 Démarrage du déploiement WordPress sur EC2..."
 
-      - name: 🌍 Déterminer l'environnement de déploiement
-        id: set-env
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/prod" ]]; then
-            echo "DEPLOY_ENV=prod" >> $GITHUB_ENV
-            echo "EC2_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
-          else
-            echo "DEPLOY_ENV=test" >> $GITHUB_ENV
-            echo "EC2_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
-          fi
+    # Vérifier et installer jq si nécessaire
+    if ! command -v jq &> /dev/null; then
+        echo "Installation de jq..."
+        apt update && apt install -y jq
+    fi
 
-      - name: 🚀 Copier les fichiers sur l'EC2
-        run: |
-          scp -i ~/.ssh/id_rsa scripts/deploy_wordpress.sh ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa environments/${{ env.DEPLOY_ENV }}/secrets.json ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+    # Vérifier et supprimer Apache s'il est installé
+    if systemctl list-units --type=service | grep -q apache2; then
+        echo "Apache détecté. Suppression en cours..."
+        systemctl stop apache2
+        systemctl disable apache2
+        systemctl mask apache2
+        apt remove --purge -y apache2 apache2-utils apache2-bin libapache2-mod-php
+        apt autoremove -y
+        echo "Apache a été supprimé avec succès."
+    fi
 
-      - name: 🏗️ Exécuter le script de déploiement sur l'EC2
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "export DEPLOY_ENV=${{ env.DEPLOY_ENV }} && chmod +x /home/ubuntu/deploy_wordpress.sh && sudo -E /home/ubuntu/deploy_wordpress.sh"
+    # Vérifier si le port 80 est occupé et le libérer
+    if ss -tulnp | grep -q ':80'; then
+        echo "Le port 80 est occupé ! Tentative de libération..."
+        fuser -k 80/tcp || true
+        echo "Le port 80 est maintenant libre."
+    fi
 
-      - name: 🚫 Désactiver la configuration 'default' et redémarrer Nginx (prod uniquement)
-        if: env.DEPLOY_ENV == 'prod'
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "sudo rm -f /etc/nginx/sites-enabled/default && sudo systemctl restart nginx"
+    # Détection automatique de la version de PHP-FPM installée
+    PHP_FPM_VERSION=$(ls /etc/init.d/ | grep -E '^php[0-9]+(\.[0-9]+)?-fpm' | head -n 1 | sed 's/-fpm//')
 
-      - name: ✅ Déploiement terminé
-        run: echo "Déploiement effectué sur ${{ env.DEPLOY_ENV }}"
+    if [ -z "$PHP_FPM_VERSION" ]; then
+        echo "❌ Aucune version de PHP-FPM trouvée. Installation de PHP depuis les dépôts officiels..."
+        
+        # Ajout du dépôt si nécessaire
+        add-apt-repository -y ppa:ondrej/php
+        apt update
+
+        # Installation de PHP-FPM et des modules requis (version spécifique)
+        apt install -y php8.2-fpm \
+            php8.2-curl \
+            php8.2-xml \
+            php8.2-imagick \
+            php8.2-mbstring \
+            php8.2-zip \
+            php8.2-gd \
+            php8.2-intl \
+            php8.2-xmlrpc \
+            php8.2-soap \
+            php8.2-opcache
+
+        # Vérification de la version installée
+        PHP_FPM_VERSION=$(ls /etc/init.d/ | grep -E '^php[0-9]+(\.[0-9]+)?-fpm' | head -n 1 | sed 's/-fpm//')
+
+        if [ -z "$PHP_FPM_VERSION" ]; then
+            echo "❌ Impossible d'installer PHP-FPM !"
+            exit 1
+        fi
+    fi
+
+    PHP_FPM_SERVICE="${PHP_FPM_VERSION}-fpm"
+    echo "PHP-FPM version : $PHP_FPM_SERVICE"
+
+    # Vérifier et activer PHP-FPM
+    systemctl enable $PHP_FPM_SERVICE
+    systemctl start $PHP_FPM_SERVICE
+
+    # Vérification et création du fichier de secrets
+    SECRETS_FILE="/home/ubuntu/secrets.json"
+    if [ ! -f "$SECRETS_FILE" ]; then
+        echo "Erreur : Le fichier $SECRETS_FILE n'existe pas sur l'EC2 !"
+        exit 1
+    fi
+
+    # Lire les secrets depuis le fichier JSON
+    MYSQL_DATABASE=$(jq -r '.MYSQL_DATABASE' "$SECRETS_FILE")
+    MYSQL_USER=$(jq -r '.MYSQL_USER' "$SECRETS_FILE")
+    MYSQL_PASSWORD=$(jq -r '.MYSQL_PASSWORD' "$SECRETS_FILE")
+    MYSQL_ROOT_PASSWORD=$(jq -r '.MYSQL_ROOT_PASSWORD' "$SECRETS_FILE")
+    MYSQL_HOST=$(jq -r '.MYSQL_HOST' "$SECRETS_FILE")
+    MYSQL_PORT=$(jq -r '.MYSQL_PORT' "$SECRETS_FILE")
+
+    # Variables système et détection de l'environnement
+    if [ "$DEPLOY_ENV" = "prod" ]; then
+        domain_name="mmustar.fr"
+    else
+        domain_name="test.mmustar.fr"
+    fi
+    wordpress_dir="/var/www/html"
+
+    echo "Déploiement pour le domaine : $domain_name"
+
+    # Installation des paquets nécessaires
+    echo "Installation des paquets..."
+    apt update && apt install -y nginx mariadb-server \
+        php8.2 \
+        php8.2-fpm \
+        php8.2-mysql \
+        php8.2-curl \
+        php8.2-xml \
+        php8.2-imagick \
+        php8.2-mbstring \
+        php8.2-zip \
+        php8.2-gd \
+        php8.2-intl \
+        php8.2-xmlrpc \
+        php8.2-soap \
+        php8.2-opcache \
+        unzip wget curl jq
+
+    # Définir PHP 8.2 comme version par défaut
+    update-alternatives --set php /usr/bin/php8.2
+
+    # Configuration de MariaDB
+    echo "Configuration de MariaDB..."
+    systemctl start mariadb
+    systemctl enable mariadb
+
+    mysql -u root -e "CREATE DATABASE IF NOT EXISTS $MYSQL_DATABASE;"
+    mysql -u root -e "CREATE USER IF NOT EXISTS '$MYSQL_USER'@'localhost' IDENTIFIED BY '$MYSQL_PASSWORD';"
+    mysql -u root -e "GRANT ALL PRIVILEGES ON $MYSQL_DATABASE.* TO '$MYSQL_USER'@'localhost';"
+    mysql -u root -e "FLUSH PRIVILEGES;"
+
+    # Téléchargement et installation de WordPress
+    echo "Téléchargement de WordPress..."
+    WP_URL="https://wordpress.org/latest.tar.gz"
+    if ! wget --spider $WP_URL; then
+        echo "Impossible d'accéder à wordpress.org. Utilisation d'une URL alternative..."
+        WP_URL="https://fr.wordpress.org/latest-fr_FR.tar.gz"
+    fi
+
+    wget $WP_URL -P /tmp/
+    tar -xzf /tmp/latest.tar.gz -C /var/www/
+    mv /var/www/wordpress/* $wordpress_dir/
+    rm -rf /var/www/wordpress /tmp/latest.tar.gz
+
+    # Configuration de WordPress
+    cp $wordpress_dir/wp-config-sample.php $wordpress_dir/wp-config.php
+    sed -i "s/database_name_here/$MYSQL_DATABASE/" $wordpress_dir/wp-config.php
+    sed -i "s/username_here/$MYSQL_USER/" $wordpress_dir/wp-config.php
+    sed -i "s/password_here/$MYSQL_PASSWORD/" $wordpress_dir/wp-config.php
+
+    # Création de la configuration Nginx
+    cat > /etc/nginx/sites-available/wordpress << 'NGINX_CONF'
+    server {
+        listen 80;
+        server_name DOMAIN_NAME www.DOMAIN_NAME;
+        root /var/www/html;
+
+        client_max_body_size 64M;
+
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+        index index.php index.html index.htm;
+        
+        location / {
+            try_files $uri $uri/ /index.php?$args;
+        }
+
+        location ~ \.php$ {
+            include fastcgi_params;
+            fastcgi_pass unix:/run/php/PHP_VERSION-fpm.sock;
+            fastcgi_index index.php;
+            fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+            fastcgi_buffers 16 16k;
+            fastcgi_buffer_size 32k;
+        }
+
+        location ~* \.(js|css|png|jpg|jpeg|gif|ico)$ {
+            expires max;
+            log_not_found off;
+        }
+    }
+NGINX_CONF
+
+    # Remplacer les variables dans la configuration Nginx
+    sed -i "s/DOMAIN_NAME/$domain_name/g" /etc/nginx/sites-available/wordpress
+    sed -i "s/PHP_VERSION/$PHP_FPM_VERSION/g" /etc/nginx/sites-available/wordpress
+
+    # Activer la configuration
+    ln -sf /etc/nginx/sites-available/wordpress /etc/nginx/sites-enabled/
+    rm -f /etc/nginx/sites-enabled/default
+
+    # Vérification et redémarrage de Nginx
+    if nginx -t; then
+        echo "Redémarrage de Nginx..."
+        systemctl restart nginx
+    else
+        echo "Erreur dans la configuration Nginx !"
+        exit 1
+    fi
+
+    # Vérifier et redémarrer PHP-FPM
+    systemctl restart $PHP_FPM_SERVICE
+    if systemctl is-active --quiet $PHP_FPM_SERVICE; then
+        echo "PHP-FPM fonctionne correctement."
+    else
+        echo "Erreur : PHP-FPM ne fonctionne pas !"
+        exit 1
+    fi
+
+    # Configuration des permissions
+    chown -R www-data:www-data $wordpress_dir
+    find $wordpress_dir -type d -exec chmod 755 {} \;
+    find $wordpress_dir -type f -exec chmod 644 {} \;
+
+    # Vérification finale
+    echo "WordPress est installé sur http://$domain_name"
