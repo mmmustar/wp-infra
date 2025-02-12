@@ -1,60 +1,127 @@
 #!/bin/bash
 
-set -e  # Arrêter le script en cas d'erreur
+set -e  # Arrêter en cas d'erreur
 
-namespace="wordpress-test"
-echo "🚀 Automatisation du déploiement WordPress sur K3s avec Helm..."
+# Configuration : remplace par ton chemin de clé SSH
+EC2_USER="ubuntu"
+EC2_IP="35.180.222.29"
+SSH_KEY="/home/gnou/.ssh/test-aws-key-pair-new.pem"
 
-# 🔹 Mettre à jour les repositories Helm
-helm repo update
+echo "🚀 Connexion à l'EC2 ($EC2_IP) et déploiement de WordPress avec Let's Encrypt..."
 
-# 🔹 Vérifier si le namespace existe, sinon le créer
-kubectl get namespace $namespace || kubectl create namespace $namespace
+# Vérifier la connexion SSH
+ssh -i "$SSH_KEY" "$EC2_USER@$EC2_IP" "echo '✅ Connexion SSH réussie'"
 
-# 🔹 Récupération des secrets AWS (sans certificats)
-SECRETS_JSON=$(aws secretsmanager get-secret-value --secret-id book --query SecretString --output text)
+# Exécuter les commandes sur l'EC2
+ssh -i "$SSH_KEY" "$EC2_USER@$EC2_IP" << 'EOF'
 
-MYSQL_DATABASE=$(echo "$SECRETS_JSON" | jq -r '.MYSQL_DATABASE')
-MYSQL_USER=$(echo "$SECRETS_JSON" | jq -r '.MYSQL_USER')
-MYSQL_PASSWORD=$(echo "$SECRETS_JSON" | jq -r '.MYSQL_PASSWORD')
-MYSQL_ROOT_PASSWORD=$(echo "$SECRETS_JSON" | jq -r '.MYSQL_ROOT_PASSWORD')
+set -e  # Arrêter en cas d'erreur
 
-# 🔹 Utilisation des certificats locaux
-CLOUDFLARE_ORIGIN_CRT="cloudflare_origin.crt"
-CLOUDFLARE_ORIGIN_KEY="cloudflare_origin.key"
+echo "🔹 Mise à jour des paquets"
+sudo apt update -y
 
-echo "🔹 Utilisation des certificats locaux depuis $CLOUDFLARE_ORIGIN_CRT et $CLOUDFLARE_ORIGIN_KEY."
+echo "🔹 Installation des dépendances"
+sudo apt install -y curl jq
 
-# 🔹 Vérification que les certificats existent
-if [[ ! -f "$CLOUDFLARE_ORIGIN_CRT" || ! -f "$CLOUDFLARE_ORIGIN_KEY" ]]; then
-    echo "❌ Erreur : Les certificats Cloudflare ne sont pas trouvés dans $CLOUDFLARE_ORIGIN_CRT et $CLOUDFLARE_ORIGIN_KEY"
-    exit 1
+# Installer K3s avec permissions correctes
+if ! command -v k3s &> /dev/null; then
+    echo "🔹 Installation de K3s..."
+    curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode=644
+    sudo systemctl enable --now k3s
 fi
 
-# 🔹 Supprimer et recréer le secret TLS Kubernetes
-kubectl delete secret cloudflare-cert --namespace $namespace --ignore-not-found
+# ✅ Correction des permissions du répertoire et du fichier
+sudo chmod 755 /etc/rancher/k3s
+sudo chmod 644 /etc/rancher/k3s/k3s.yaml
+sudo chown ubuntu:ubuntu /etc/rancher/k3s/k3s.yaml
 
-kubectl create secret tls cloudflare-cert --namespace $namespace \
-  --cert="$CLOUDFLARE_ORIGIN_CRT" \
-  --key="$CLOUDFLARE_ORIGIN_KEY"
+# S'assurer que l'utilisateur a bien accès à K3s
+export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+echo "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> ~/.bashrc
+source ~/.bashrc
 
-echo "✅ Secret TLS Kubernetes créé avec succès."
+# Installer kubectl
+if ! command -v kubectl &> /dev/null; then
+    echo "🔹 Installation de kubectl..."
+    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    chmod +x kubectl
+    sudo mv kubectl /usr/local/bin/
+fi
 
-# 🔹 Déploiement de WordPress avec Helm
+# Installer Helm
+if ! command -v helm &> /dev/null; then
+    echo "🔹 Installation de Helm..."
+    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+fi
+
+# Déployer WordPress avec Helm
+namespace="wordpress-test"
+kubectl get namespace $namespace || kubectl create namespace $namespace
+
+# Installer Cert-Manager pour gérer les certificats Let's Encrypt
+if ! kubectl get namespace cert-manager &> /dev/null; then
+    echo "🔹 Installation de Cert-Manager..."
+    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+    sleep 30  # Attendre que Cert-Manager soit opérationnel
+fi
+
+# Vérifier que Cert-Manager fonctionne bien
+echo "🔹 Vérification de l'état de Cert-Manager..."
+kubectl get pods -n cert-manager
+
+# Créer un ClusterIssuer pour Let's Encrypt
+cat <<EOF_CERT | kubectl apply -f -
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-prod
+spec:
+  acme:
+    email: admin@mmustar.fr
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: letsencrypt-prod
+    solvers:
+    - http01:
+        ingress:
+          class: nginx
+EOF_CERT
+
+echo "✅ ClusterIssuer Let's Encrypt créé."
+
+# Déployer WordPress avec TLS Let's Encrypt
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm repo update
+
 helm upgrade --install wordpress bitnami/wordpress \
-  --namespace $namespace \
+  --namespace "$namespace" \
   --set global.storageClass=standard \
   --set service.type=ClusterIP \
-  --set mariadb.auth.database=$MYSQL_DATABASE \
-  --set mariadb.auth.username=$MYSQL_USER \
-  --set mariadb.auth.password=$MYSQL_PASSWORD \
-  --set mariadb.auth.rootPassword=$MYSQL_ROOT_PASSWORD \
   --set ingress.enabled=true \
   --set ingress.hostname=test.mmustar.fr \
   --set ingress.annotations."kubernetes\\.io/ingress\\.class"="nginx" \
+  --set ingress.annotations."cert-manager\\.io/cluster-issuer"="letsencrypt-prod" \
   --set ingress.tls=true \
   --set ingress.extraTls[0].hosts[0]=test.mmustar.fr \
-  --set ingress.extraTls[0].secretName=cloudflare-cert
+  --set ingress.extraTls[0].secretName=letsencrypt-cert
 
+echo "🔹 Attente de l'émission du certificat..."
+sleep 60  # Attendre la génération du certificat
 
-echo "✅ Déploiement Helm terminé avec succès. WordPress devrait être accessible via test.mmustar.fr 🚀"
+# Vérifier l'état des certificats
+kubectl get certificate -n "$namespace"
+
+# Attendre jusqu'à ce que le certificat devienne "Ready"
+while [[ $(kubectl get certificate -n "$namespace" letsencrypt-cert -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do
+    echo "🔄 En attente que le certificat Let's Encrypt soit validé..."
+    sleep 10
+done
+
+echo "✅ Certificat Let's Encrypt validé avec succès."
+
+# Redémarrer l'ingress pour prendre en compte le certificat Let's Encrypt
+kubectl rollout restart deployment wordpress -n "$namespace"
+
+echo "✅ Déploiement terminé. WordPress devrait être accessible sur https://test.mmustar.fr 🚀"
+
+EOF
