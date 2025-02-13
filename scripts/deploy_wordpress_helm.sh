@@ -2,19 +2,22 @@
 
 set -e  # Arrêter en cas d'erreur
 
-# Configuration : remplace par ton chemin de clé SSH
+# Configuration
 EC2_USER="ubuntu"
 EC2_IP="35.180.222.29"
 SSH_KEY="/home/gnou/.ssh/test-aws-key-pair-new.pem"
 
-echo "🚀 Connexion à l'EC2 ($EC2_IP) et déploiement de WordPress avec Let's Encrypt..."
+echo "🚀 Connexion à l'EC2 ($EC2_IP) et déploiement de WordPress..."
+
+# Copier les certificats Cloudflare sur l'EC2
+echo "🔹 Copie des certificats Cloudflare..."
+scp -i "$SSH_KEY" ./scripts/cloudflare_origin.* "$EC2_USER@$EC2_IP:/home/ubuntu/"
 
 # Vérifier la connexion SSH
 ssh -i "$SSH_KEY" "$EC2_USER@$EC2_IP" "echo '✅ Connexion SSH réussie'"
 
 # Exécuter les commandes sur l'EC2
 ssh -i "$SSH_KEY" "$EC2_USER@$EC2_IP" << 'EOF'
-
 set -e  # Arrêter en cas d'erreur
 
 echo "🔹 Mise à jour des paquets"
@@ -30,17 +33,17 @@ if ! command -v k3s &> /dev/null; then
     sudo systemctl enable --now k3s
 fi
 
-# ✅ Correction des permissions du répertoire et du fichier
+# Correction des permissions du répertoire et du fichier
 sudo chmod 755 /etc/rancher/k3s
 sudo chmod 644 /etc/rancher/k3s/k3s.yaml
 sudo chown ubuntu:ubuntu /etc/rancher/k3s/k3s.yaml
 
-# S'assurer que l'utilisateur a bien accès à K3s
+# Configuration de K3s
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 echo "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml" >> ~/.bashrc
 source ~/.bashrc
 
-# Installer kubectl
+# Installer kubectl si nécessaire
 if ! command -v kubectl &> /dev/null; then
     echo "🔹 Installation de kubectl..."
     curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -48,80 +51,171 @@ if ! command -v kubectl &> /dev/null; then
     sudo mv kubectl /usr/local/bin/
 fi
 
-# Installer Helm
+# Installer Helm si nécessaire
 if ! command -v helm &> /dev/null; then
     echo "🔹 Installation de Helm..."
     curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
 fi
 
-# Déployer WordPress avec Helm
+# Créer le namespace
 namespace="wordpress-test"
 kubectl get namespace $namespace || kubectl create namespace $namespace
 
-# Installer Cert-Manager pour gérer les certificats Let's Encrypt
-if ! kubectl get namespace cert-manager &> /dev/null; then
-    echo "🔹 Installation de Cert-Manager..."
-    kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
-    sleep 30  # Attendre que Cert-Manager soit opérationnel
-fi
+# Nettoyer les ressources existantes
+echo "🧹 Nettoyage des installations précédentes..."
+kubectl delete secret cloudflare-tls -n $namespace || true
+kubectl delete ingress wordpress -n $namespace || true
+kubectl delete configmap nginx-configuration -n $namespace || true
 
-# Vérifier que Cert-Manager fonctionne bien
-echo "🔹 Vérification de l'état de Cert-Manager..."
-kubectl get pods -n cert-manager
+# Créer le secret TLS avec les certificats Cloudflare
+echo "🔐 Configuration des certificats Cloudflare..."
+kubectl create secret tls cloudflare-tls -n $namespace \
+    --cert=/home/ubuntu/cloudflare_origin.crt \
+    --key=/home/ubuntu/cloudflare_origin.key
 
-# Créer un ClusterIssuer pour Let's Encrypt
-cat <<EOF_CERT | kubectl apply -f -
-apiVersion: cert-manager.io/v1
-kind: ClusterIssuer
-metadata:
-  name: letsencrypt-prod
-spec:
-  acme:
-    email: admin@mmustar.fr
-    server: https://acme-v02.api.letsencrypt.org/directory
-    privateKeySecretRef:
-      name: letsencrypt-prod
-    solvers:
-    - http01:
-        ingress:
-          class: nginx
-EOF_CERT
+# Installer l'Ingress NGINX Controller
+echo "📦 Installation de l'Ingress NGINX Controller..."
+helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+helm repo update
 
-echo "✅ ClusterIssuer Let's Encrypt créé."
+helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+    --namespace $namespace \
+    --set controller.publishService.enabled=true \
+    --set controller.service.type=NodePort \
+    --set controller.service.nodePorts.http=30080 \
+    --set controller.service.nodePorts.https=30443 \
+    --set controller.config.ssl-protocols="TLSv1.2 TLSv1.3" \
+    --set controller.config.proxy-buffer-size="128k" \
+    --set controller.config.large-client-header-buffers="4 64k" \
+    --set controller.extraArgs.default-ssl-certificate="wordpress-test/cloudflare-tls"
 
-# Déployer WordPress avec TLS Let's Encrypt
+# Attendre que l'Ingress Controller soit prêt
+echo "⏳ Attente du démarrage de l'Ingress Controller..."
+kubectl rollout status deployment ingress-nginx-controller -n $namespace
+
+# Déployer WordPress avec Helm
+echo "🚀 Déploiement de WordPress..."
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 
+cat > wordpress-values.yaml << 'EOL'
+wordpressScheme: https
+wordpressExtraConfigContent: |
+  define('FORCE_SSL_ADMIN', true);
+  $_SERVER['HTTPS'] = 'on';
+
+ingress:
+  enabled: true
+  pathType: Prefix
+  hostname: test.mmustar.fr
+  extraHosts:
+    - name: www.test.mmustar.fr
+      path: /
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+  tls: true
+  extraTls:
+    - hosts:
+        - test.mmustar.fr
+        - www.test.mmustar.fr
+      secretName: cloudflare-tls
+
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: local-path
+
+mariadb:
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: local-path
+
+resources:
+  requests:
+    memory: "256Mi"
+    cpu: "250m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"
+EOL
+
 helm upgrade --install wordpress bitnami/wordpress \
-  --namespace "$namespace" \
-  --set global.storageClass=standard \
-  --set service.type=ClusterIP \
-  --set ingress.enabled=true \
-  --set ingress.hostname=test.mmustar.fr \
-  --set ingress.annotations."kubernetes\\.io/ingress\\.class"="nginx" \
-  --set ingress.annotations."cert-manager\\.io/cluster-issuer"="letsencrypt-prod" \
-  --set ingress.tls=true \
-  --set ingress.extraTls[0].hosts[0]=test.mmustar.fr \
-  --set ingress.extraTls[0].secretName=letsencrypt-cert
+    --namespace "$namespace" \
+    --values wordpress-values.yaml
 
-echo "🔹 Attente de l'émission du certificat..."
-sleep 60  # Attendre la génération du certificat
+# Configuration finale de l'ingress
+echo "🔧 Configuration de l'ingress..."
+cat <<'YAML' | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wordpress
+  namespace: wordpress-test
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+spec:
+  ingressClassName: nginx
+  tls:
+  - hosts:
+    - test.mmustar.fr
+    - www.test.mmustar.fr
+    secretName: cloudflare-tls
+  rules:
+  - host: test.mmustar.fr
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wordpress
+            port:
+              number: 80
+  - host: www.test.mmustar.fr
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wordpress
+            port:
+              number: 80
+YAML
 
-# Vérifier l'état des certificats
-kubectl get certificate -n "$namespace"
+echo "✅ Déploiement terminé. WordPress devrait être accessible sur https://test.mmustar.fr"
 
-# Attendre jusqu'à ce que le certificat devienne "Ready"
-while [[ $(kubectl get certificate -n "$namespace" letsencrypt-cert -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}') != "True" ]]; do
-    echo "🔄 En attente que le certificat Let's Encrypt soit validé..."
-    sleep 10
-done
+# Récupération des credentials
+echo "🔑 Credentials WordPress :"
+echo "Username: user"
+echo "Password: $(kubectl get secret --namespace wordpress-test wordpress -o jsonpath="{.data.wordpress-password}" | base64 -d)"
 
-echo "✅ Certificat Let's Encrypt validé avec succès."
+# Vérification finale
+echo "🔍 Vérification de la configuration..."
+echo "Secret TLS :"
+kubectl get secret cloudflare-tls -n $namespace
+echo "Ingress :"
+kubectl get ingress -n $namespace
+echo "Services :"
+kubectl get services -n $namespace
+echo "Pods :"
+kubectl get pods -n $namespace
 
-# Redémarrer l'ingress pour prendre en compte le certificat Let's Encrypt
-kubectl rollout restart deployment wordpress -n "$namespace"
-
-echo "✅ Déploiement terminé. WordPress devrait être accessible sur https://test.mmustar.fr 🚀"
+# Afficher les logs de l'ingress controller
+echo "📝 Logs de l'ingress controller :"
+kubectl logs -n $namespace -l app.kubernetes.io/component=controller --tail=50 || true
 
 EOF

@@ -1,0 +1,118 @@
+## Configuration WordPress
+wordpressUsername: admin
+wordpressPassword: "p@ssW0rdRnd!"
+wordpressEmail: "admin@mmustar.fr"
+wordpressBlogName: "mmustar.fr"
+wordpressScheme: https
+wordpressSkipInstall: true
+
+## Variables d'environnement pour WordPress
+extraEnvVars:
+  - name: AUTH_KEY
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: AUTH_SALT
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: LOGGED_IN_KEY
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: LOGGED_IN_SALT
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: NONCE_KEY
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: NONCE_SALT
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: SECURE_AUTH_KEY
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+  - name: SECURE_AUTH_SALT
+    value: "P8Kp6Md2vQxL3nRjZyW9TbNf4HcJgY7mVqXtAsSw5UkE8uBhC"
+
+## Configuration de la base de données externe (RDS)
+externalDatabase:
+  host: terraform-20250213101840209100000001.cdaookoquxxr.eu-west-3.rds.amazonaws.com
+  user: wp_user
+  password: StrongWpUserPass456!
+  database: wp_database
+  port: 3306
+  
+## Désactivation de MariaDB interne
+mariadb:
+  enabled: false
+
+## Configuration Ingress
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  pathType: Prefix
+  hostname: mmustar.fr
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "64m"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/from-to-www-redirect: "true"
+  extraHosts:
+    - name: www.mmustar.fr
+      path: /
+
+## Configuration Persistence
+persistence:
+  enabled: true
+  storageClass: "local-path"
+  size: 10Gi
+  accessMode: ReadWriteOnce
+
+## Configuration Service
+service:
+  type: ClusterIP
+  ports:
+    http: 80
+    https: 443
+
+## Configuration des ressources
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "1Gi"
+    cpu: "1000m"
+
+## Configuration de la sécurité
+securityContext:
+  enabled: true
+  runAsUser: 1001
+  fsGroup: 1001
+
+## Optimisation des performances
+wordpressConfigureCache: false
+
+## Configuration WordPress avancée
+wordpressConfiguration: |
+  /* Custom WordPress config */
+  define('WP_MEMORY_LIMIT', '256M');
+  define('WP_MAX_MEMORY_LIMIT', '512M');
+
+## Configuration des sondes
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 120
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 6
+  successThreshold: 1
+
+## Configuration des métriques
+metrics:
+  enabled: false
+
+## Configuration des mises à jour
+wordpressAutoUpdateLevel: none
+
+## Configuration du thème par défaut
+wordpressDefaultTheme: twentytwentythree

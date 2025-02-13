@@ -1,33 +1,26 @@
-variable "environment" {
-  description = "Nom de l'environnement (prod)"
-  type        = string
-  default     = "prod"
-}
-
-variable "project_name" {
-  description = "Nom du projet pour le tagging"
-  type        = string
+variable "db_subnet_ids" {
+  description = "Liste des IDs des sous-réseaux pour le DB Subnet Group"
+  type        = list(string)
 }
 
 variable "vpc_id" {
-  description = "ID du VPC où sera créée l'instance EC2"
+  description = "ID du VPC où sera créé l'instance"
   type        = string
 }
 
-variable "subnet_id" {
-  description = "ID du sous-réseau où sera créée l'instance EC2"
+variable "environment" {
+  description = "Environnement (prod)"
   type        = string
 }
 
-variable "security_group_id" {
-  description = "ID du groupe de sécurité pour l'instance EC2"
+variable "project_name" {
+  description = "Nom du projet"
   type        = string
 }
 
 variable "instance_type" {
   description = "Type d'instance EC2"
   type        = string
-  default     = "t3.medium"
 }
 
 variable "key_name" {
@@ -40,7 +33,12 @@ variable "ami_id" {
   type        = string
 }
 
+variable "security_group_id" {
+  description = "ID du groupe de sécurité pour l'instance EC2"
+  type        = string
+}
+
 variable "eip_id" {
-  description = "Elastic IP allocation ID"
+  description = "Allocation ID de l'EIP"
   type        = string
 }
