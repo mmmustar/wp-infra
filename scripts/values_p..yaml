@@ -37,17 +37,20 @@ externalDatabase:
 mariadb:
   enabled: false
 
-## Configuration Ingress pour accès direct par IP (sans DNS)
+## Configuration Ingress
 ingress:
   enabled: true
   ingressClassName: nginx
   pathType: Prefix
-  hostname: "35.180.33.10"  # Utilisation de l'IP directement
+  hostname: mmustar.fr
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "64m"
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"  # Désactivation de la redirection SSL
-  extraHosts: []  # Suppression des extra hosts
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/from-to-www-redirect: "true"
+  extraHosts:
+    - name: www.mmustar.fr
+      path: /
 
 ## Configuration Persistence
 persistence:
