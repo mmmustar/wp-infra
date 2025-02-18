@@ -6,32 +6,62 @@ set -e  # Arrêt en cas d'erreur
 SSH_KEY_PATH="/home/gnou/.ssh/test-aws-key-pair-new.pem"
 EC2_USER="ubuntu"
 EC2_IP="35.180.33.10"
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-VALUES_FILE="$SCRIPT_DIR/values.yaml"
-NAMESPACE="wordpress"
-RELEASE_NAME="wordpress"
-AWS_SECRET_NAME="book"
-AWS_REGION="eu-west-3"
-KNOWN_HOSTS="/home/gnou/.ssh/known_hosts"
-TEMP_VARS_FILE="/tmp/wordpress_vars.sh"
+NAMESPACE="wordpress-test"
+VALUES_FILE="values.yaml"
 
-# Vérification du fichier values.yaml
-if [ ! -f "$VALUES_FILE" ]; then
-    echo "❌ Erreur : values.yaml non trouvé dans $VALUES_FILE"
-    exit 1
-fi
+echo "🔄 Préparation du déploiement..."
 
-# Désactivation de la configuration SSL conflictuelle sur l'EC2 (si présente)
-echo "🚫 Désactivation de la configuration SSL conflictuelle sur l'EC2..."
-ssh -i "$SSH_KEY_PATH" "$EC2_USER@$EC2_IP" "sudo mv /etc/nginx/conf.d/ssl.conf /etc/nginx/conf.d/ssl.conf.bak || true"
+# Fonction pour exécuter des commandes SSH avec timeout
+run_ssh_command() {
+    local cmd="$1"
+    local timeout_seconds="${2:-60}"
+    ssh -i "$SSH_KEY_PATH" "$EC2_USER@$EC2_IP" "timeout $timeout_seconds bash -c '$cmd'" || return 1
+}
 
-# Récupération des secrets depuis AWS Secrets Manager
-echo "🔑 Récupération des secrets depuis AWS Secrets Manager..."
-SECRETS_JSON=$(aws secretsmanager get-secret-value --secret-id "$AWS_SECRET_NAME" --region "$AWS_REGION" --query SecretString --output text)
+echo "🚀 Installation de K3s..."
+run_ssh_command "curl -sfL https://get.k3s.io | sh -" 120
 
-# Extraction des valeurs des secrets
-MYSQL_HOST=$(echo $SECRETS_JSON | jq -r .MYSQL_HOST)
-MYSQL_DATABASE=$(echo $SECRETS_JSON | jq -r .MYSQL_DATABASE)
-MYSQL_USER=$(echo $SECRETS_JSON | jq -r .MYSQL_USER)
-MYSQL_PASSWORD=$(echo $SECRETS_JSON | jq -r .MYSQL_PASSWORD)
-MYSQL_PORT=3306  # Port déf
+echo "⏳ Attente du démarrage de K3s..."
+run_ssh_command "sudo systemctl enable --now k3s && \
+                 sudo chmod 644 /etc/rancher/k3s/k3s.yaml && \
+                 sudo chown ubuntu:ubuntu /etc/rancher/k3s/k3s.yaml"
+
+echo "🔍 Vérification du cluster..."
+run_ssh_command "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && kubectl get nodes" 30
+
+echo "🔧 Installation de Helm..."
+run_ssh_command "curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash" 60
+
+echo "📦 Configuration des dépôts Helm..."
+run_ssh_command "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+                 helm repo add bitnami https://charts.bitnami.com/bitnami && \
+                 helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx && \
+                 helm repo update"
+
+echo "🌐 Installation de l'Ingress Controller..."
+run_ssh_command "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+                 helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+                 --namespace kube-system --wait --timeout 5m" 300
+
+echo "🔧 Création du namespace..."
+run_ssh_command "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+                 kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -"
+
+# Copie du fichier values.yaml
+echo "📄 Copie du fichier values.yaml..."
+scp -i "$SSH_KEY_PATH" "$VALUES_FILE" "$EC2_USER@$EC2_IP:~/"
+
+echo "🚀 Déploiement de WordPress..."
+run_ssh_command "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+                 helm upgrade --install wordpress-test bitnami/wordpress \
+                 --namespace $NAMESPACE \
+                 --values ~/values.yaml \
+                 --timeout 10m \
+                 --wait" 600
+
+echo "🔍 Vérification finale..."
+run_ssh_command "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
+                 kubectl get pods -n $NAMESPACE && \
+                 kubectl get ingress -n $NAMESPACE"
+
+echo "✅ Déploiement terminé. WordPress devrait être accessible à: http://35.180.33.10.nip.io"

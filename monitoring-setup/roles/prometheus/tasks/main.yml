@@ -1,0 +1,40 @@
+---
+- name: Télécharger l'archive de Prometheus
+  get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v2.26.0/prometheus-2.26.0.linux-amd64.tar.gz"
+    dest: "/tmp/prometheus.tar.gz"
+
+- name: Extraire l'archive de Prometheus
+  unarchive:
+    src: "/tmp/prometheus.tar.gz"
+    dest: "/opt/"
+    remote_src: yes
+    creates: "/opt/prometheus-2.26.0.linux-amd64"
+
+- name: Créer un lien symbolique pour Prometheus
+  file:
+    src: "/opt/prometheus-2.26.0.linux-amd64"
+    dest: "/opt/prometheus"
+    state: link
+
+- name: Copier le fichier de configuration Prometheus
+  copy:
+    src: prometheus.yml
+    dest: "/opt/prometheus/prometheus.yml"
+    mode: '0644'
+    backup: yes
+
+- name: Copier le fichier de service systemd pour Prometheus
+  copy:
+    src: prometheus.service
+    dest: "/etc/systemd/system/prometheus.service"
+    mode: '0644'
+    backup: yes
+  notify:
+    - Reload systemd
+
+- name: Démarrer et activer Prometheus
+  service:
+    name: prometheus
+    state: started
+    enabled: yes

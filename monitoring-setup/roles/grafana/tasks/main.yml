@@ -1,0 +1,32 @@
+- name: Ajouter la clé GPG de Grafana
+  apt_key:
+    url: https://packages.grafana.com/gpg.key
+    state: present
+
+- name: Ajouter le repository Grafana
+  apt_repository:
+    repo: "deb https://packages.grafana.com/oss/deb stable main"
+    state: present
+
+- name: Mettre à jour la liste des paquets
+  apt:
+    update_cache: yes
+
+- name: Installer Grafana
+  apt:
+    name: grafana
+    state: latest
+
+- name: Démarrer et activer Grafana
+  service:
+    name: grafana-server
+    state: started
+    enabled: yes
+
+- name: Déployer le fichier de configuration Grafana
+  template:
+    src: grafana.ini.j2
+    dest: /etc/grafana/grafana.ini
+    mode: '0644'
+  notify:
+    - Restart grafana

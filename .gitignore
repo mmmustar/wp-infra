@@ -35,3 +35,5 @@ vault.yml
 secrets.jsonrepomix-output.txt
 cloudflare_origin.crt
 cloudflare_origin.key
+secrets
+wp-config.php
