@@ -1,7 +1,0 @@
----
-- name: Installer Grafana et Prometheus
-  hosts: serveurs
-  become: true
-  roles:
-    - grafana
-    - prometheus
