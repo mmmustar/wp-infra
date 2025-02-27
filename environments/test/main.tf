@@ -1,50 +1,46 @@
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"]  // Canonical
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-focal-20.04-amd64-server-*"]
-  }
+module "network" {
+  source             = "../modules/network"
+  environment        = var.environment
+  project_name       = var.project_name
+  vpc_cidr           = var.vpc_cidr
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
 }
 
-data "aws_secretsmanager_secret" "wp_secrets" {
-  name = "book"
+module "database" {
+  source                  = "../modules/database"
+  environment             = var.environment
+  project_name            = var.project_name
+  subnet_ids              = module.network.private_subnet_ids
+  security_group_id       = module.network.db_sg_id
+  db_name                 = var.db_name
+  db_username             = var.db_username
+  db_password             = var.db_password
+  db_allocated_storage    = var.db_allocated_storage
+  db_instance_class       = var.db_instance_class
+  db_storage_type         = var.db_storage_type
+  db_engine_version       = var.db_engine_version
+  db_parameter_group_name = var.db_parameter_group_name
+  db_skip_final_snapshot  = var.db_skip_final_snapshot
+
+  depends_on = [module.network]
 }
 
-data "aws_secretsmanager_secret_version" "wp_secrets" {
-  secret_id = data.aws_secretsmanager_secret.wp_secrets.id
-}
-
-resource "local_file" "secrets_json" {
-  content  = jsonencode(jsondecode(data.aws_secretsmanager_secret_version.wp_secrets.secret_string))
-  filename = "${path.module}/secrets.json"
-}
-
-# 🔹 Déploiement du module Compute (EC2)
 module "compute" {
-  source            = "../modules/compute"
-  environment       = var.environment
-  project_name      = var.project_name
-  vpc_id            = var.vpc_id
-  subnet_id         = var.subnet_id
-  security_group_id = var.security_group_id
-  instance_type     = var.instance_type
-  key_name          = var.key_name
-  ami_id            = data.aws_ami.ubuntu.id  
-}
+  source             = "../modules/compute"
+  environment        = var.environment
+  project_name       = var.project_name
+  subnet_id          = module.network.public_subnet_ids[0]
+  security_group_id  = module.network.wordpress_sg_id
+  ami_id             = var.ami_id
+  instance_type      = var.instance_type
+  key_name           = var.key_name
+  root_volume_size   = var.root_volume_size
+  eip_id             = var.eip_id != "" ? var.eip_id : module.network.eip_id
+  db_name            = module.database.db_instance_name
+  db_username        = module.database.db_instance_username
+  db_password        = var.db_password
+  db_endpoint        = module.database.db_instance_endpoint
 
-resource "aws_eip_association" "wordpress_eip_assoc" {
-  instance_id   = module.compute.instance_id
-  allocation_id = var.eip_id
-}
-
-# 🔹 Outputs
-output "instance_id" {
-  description = "ID de l'instance EC2"
-  value       = module.compute.instance_id
-}
-
-output "instance_public_ip" {
-  description = "Adresse IP publique de l'EC2"
-  value       = module.compute.instance_public_ip
+  depends_on = [module.database]
 }

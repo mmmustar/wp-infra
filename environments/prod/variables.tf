@@ -3,6 +3,8 @@ variable "db_subnet_ids" {
   type        = list(string)
 }
 
+
+
 variable "vpc_id" {
   description = "ID du VPC où sera créé l'instance"
   type        = string

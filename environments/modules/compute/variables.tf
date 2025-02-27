@@ -1,15 +1,10 @@
 variable "environment" {
-  description = "Nom de l'environnement (ex. test, prod)"
+  description = "Environnement (test/prod)"
   type        = string
 }
 
 variable "project_name" {
-  description = "Nom du projet pour le tagging"
-  type        = string
-}
-
-variable "vpc_id" {
-  description = "ID du VPC où sera créée l'instance EC2"
+  description = "Nom du projet"
   type        = string
 }
 
@@ -23,10 +18,14 @@ variable "security_group_id" {
   type        = string
 }
 
+variable "ami_id" {
+  description = "ID de l'AMI à utiliser pour l'instance EC2. Si vide, l'AMI Ubuntu le plus récent sera utilisé."
+  type        = string
+}
+
 variable "instance_type" {
   description = "Type d'instance EC2"
   type        = string
-  default     = "t3.medium"
 }
 
 variable "key_name" {
@@ -34,7 +33,33 @@ variable "key_name" {
   type        = string
 }
 
-variable "ami_id" {
-  description = "AMI ID pour l'instance EC2"
+variable "root_volume_size" {
+  description = "Taille du volume racine en Go"
+  type        = number
+}
+
+variable "eip_id" {
+  description = "ID de l'Elastic IP à associer à l'instance. Laissez vide pour utiliser l'EIP généré automatiquement."
+  type        = string
+}
+
+variable "db_name" {
+  description = "Nom de la base de données pour la configuration WordPress"
+  type        = string
+}
+
+variable "db_username" {
+  description = "Nom d'utilisateur de la base de données pour la configuration WordPress"
+  type        = string
+}
+
+variable "db_password" {
+  description = "Mot de passe de la base de données pour la configuration WordPress"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_endpoint" {
+  description = "Point de terminaison de la base de données pour la configuration WordPress"
   type        = string
 }
