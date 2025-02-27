@@ -1,8 +1,8 @@
 module "network" {
-  source             = "../modules/network"
-  environment        = var.environment
-  project_name       = var.project_name
-  vpc_cidr           = var.vpc_cidr
+  source               = "../modules/network"
+  environment          = var.environment
+  project_name         = var.project_name
+  vpc_cidr             = var.vpc_cidr
   public_subnet_cidrs  = var.public_subnet_cidrs
   private_subnet_cidrs = var.private_subnet_cidrs
 }
@@ -36,7 +36,6 @@ module "compute" {
   instance_type      = var.instance_type
   key_name           = var.key_name
   root_volume_size   = var.root_volume_size
-  eip_id             = var.eip_id != "" ? var.eip_id : module.network.eip_id
   db_name            = module.database.db_instance_name
   db_username        = module.database.db_instance_username
   db_password        = var.db_password

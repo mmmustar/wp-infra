@@ -1,3 +1,5 @@
+# environments/modules/network/variables.tf
+
 variable "environment" {
   description = "Environnement (test/prod)"
   type        = string

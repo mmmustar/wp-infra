@@ -38,11 +38,6 @@ variable "root_volume_size" {
   type        = number
 }
 
-variable "eip_id" {
-  description = "ID de l'Elastic IP à associer à l'instance. Laissez vide pour utiliser l'EIP généré automatiquement."
-  type        = string
-}
-
 variable "db_name" {
   description = "Nom de la base de données pour la configuration WordPress"
   type        = string

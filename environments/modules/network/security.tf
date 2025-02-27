@@ -1,9 +1,7 @@
-# environments/modules/network/security.tf
-
-# Groupe de sécurité pour l'instance EC2
+# Groupe de securite pour l'instance WordPress EC2
 resource "aws_security_group" "wordpress" {
   name        = "${var.project_name}-ec2-sg-${var.environment}"
-  description = "Groupe de sécurité pour l'instance WordPress EC2"
+  description = "Groupe de securite pour la base de donneeRDS"
   vpc_id      = aws_vpc.main.id
 
   # SSH
@@ -49,10 +47,10 @@ resource "aws_security_group" "wordpress" {
   }
 }
 
-# Groupe de sécurité pour RDS
+# Groupe de securite pour RDS
 resource "aws_security_group" "db" {
   name        = "${var.project_name}-db-sg-${var.environment}"
-  description = "Groupe de sécurité pour la base de données RDS"
+  description = "Groupe_de_securite_pour_la_base_de_donneeRDS"
   vpc_id      = aws_vpc.main.id
 
   # MySQL/MariaDB
