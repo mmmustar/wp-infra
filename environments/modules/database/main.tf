@@ -42,6 +42,7 @@ resource "aws_db_parameter_group" "wordpress" {
 
 # Instances RDS MySQL avec optimisations de coûts
 resource "aws_db_instance" "wordpress" {
+  identifier             = "${var.project_name}-rds-wp-${var.environment}"
   allocated_storage      = var.allocated_storage
   storage_type           = "gp3"
   engine                 = "mysql"
@@ -57,7 +58,7 @@ resource "aws_db_instance" "wordpress" {
   # Optimisations de coûts
   skip_final_snapshot    = true
   multi_az               = var.environment == "prod" ? var.multi_az : false
-  backup_retention_period = var.environment == "prod" ? 7 : 1  # 7 jours en prod, 1 jour en test
+  backup_retention_period = var.environment == "prod" ? 7 : 7  # 7 jours en prod, 1 jour en test
   backup_window           = "03:00-04:00"  # Fenêtre de sauvegarde à 3h du matin UTC
   maintenance_window      = "Sun:04:30-Sun:05:30"  # Maintenance le dimanche matin
   

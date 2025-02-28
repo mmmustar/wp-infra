@@ -1,6 +1,6 @@
 # environments/modules/security/main.tf
 
-# Groupe de sécurité pour les instances WordPress
+# Groupe de sécurite pour les instances WordPress
 resource "aws_security_group" "wordpress" {
   name_prefix = "${var.project_name}-wp-${var.environment}"
   description = "Groupe de securite pour les instances WordPress"
@@ -69,7 +69,7 @@ resource "aws_security_group" "wordpress" {
     description = "K3s NodePort Range"
   }
 
-  # Pour Cloudflare, on peut spécifier leurs plages d'IP
+  # Pour Cloudflare, on peut specifier leurs plages d'IP
   ingress {
     from_port   = 80
     to_port     = 80
@@ -86,7 +86,7 @@ resource "aws_security_group" "wordpress" {
     description = "Cloudflare HTTPS access"
   }
 
-  # Tout le trafic sortant est autorisé
+  # Tout le trafic sortant est autorise
   egress {
     from_port   = 0
     to_port     = 0
@@ -102,7 +102,7 @@ resource "aws_security_group" "wordpress" {
   }
 }
 
-# Groupe de sécurité pour la base de données RDS
+# Groupe de securite pour la base de donnees RDS
 resource "aws_security_group" "database" {
   name_prefix = "${var.project_name}-db-${var.environment}"
   description = "Groupe de securite pour la base de donnees RDS"
@@ -114,10 +114,10 @@ resource "aws_security_group" "database" {
     to_port         = 3306
     protocol        = "tcp"
     security_groups = [aws_security_group.wordpress.id]
-    description     = "Accès MySQL depuis WordPress"
+    description     = "Acces MySQL depuis WordPress"
   }
 
-  # Tout le trafic sortant est autorisé
+  # Tout le trafic sortant est autorise
   egress {
     from_port   = 0
     to_port     = 0
@@ -133,7 +133,7 @@ resource "aws_security_group" "database" {
   }
 }
 
-# Création du rôle IAM pour l'EC2
+# Creation du role IAM pour l'EC2
 resource "aws_iam_role" "ec2_wordpress_role" {
   name = "${var.project_name}-${var.environment}-EC2WordPressRole"
 
@@ -151,7 +151,7 @@ resource "aws_iam_role" "ec2_wordpress_role" {
   }
 }
 
-# Politique pour accéder à Secrets Manager
+# Politique pour acceder à Secrets Manager
 resource "aws_iam_policy" "secrets_manager_read" {
   name        = "${var.project_name}-${var.environment}-SecretsManagerReadOnly"
   description = "Autorisation pour lire les secrets de Secrets Manager"
@@ -169,13 +169,13 @@ resource "aws_iam_policy" "secrets_manager_read" {
   })
 }
 
-# Attachement de la politique au rôle
+# Attachement de la politique au role
 resource "aws_iam_role_policy_attachment" "secrets_attach" {
   role       = aws_iam_role.ec2_wordpress_role.name
   policy_arn = aws_iam_policy.secrets_manager_read.arn
 }
 
-# Création du profil d'instance
+# Creation du profil d'instance
 resource "aws_iam_instance_profile" "ec2_wordpress_profile" {
   name = "${var.project_name}-${var.environment}-EC2WordPressProfile"
   role = aws_iam_role.ec2_wordpress_role.name
