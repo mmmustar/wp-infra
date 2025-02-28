@@ -1,11 +1,19 @@
 #!/bin/bash
+# deploy.sh – Script de déploiement pour forcer WordPress à utiliser l'adresse test.mmustar.fr avec Apache,
+# installer le certificat SSL pour l'environnement test via un secret Kubernetes,
+# mettre à jour l'Ingress pour servir le domaine en HTTPS,
+# afficher les identifiants WordPress, et
+# inviter à finaliser manuellement l'installation de WordPress via le navigateur.
 
-# Configuration
+# Configuration de base
 SSH_KEY_PATH="/home/gnou/.ssh/test-aws-key-pair-new.pem"
 EC2_USER="ubuntu"
-EC2_IP="${1:-51.44.170.64}"  # Utiliser le premier argument ou l'IP par défaut
+# Utiliser l'IP fournie en argument ou l'IP par défaut
+EC2_IP="${1:-51.44.170.64}"
+# Utiliser le nom de domaine de l'environnement test
+domain_name="test.mmustar.fr"
 
-# Fonction pour exécuter des commandes SSH
+# Fonction pour exécuter une commande SSH sur l'instance EC2
 run_ssh() {
     ssh -o StrictHostKeyChecking=accept-new \
         -o ConnectTimeout=10 \
@@ -13,181 +21,144 @@ run_ssh() {
         "$EC2_USER@$EC2_IP" "$1"
 }
 
-echo "🔍 Diagnostic de l'installation WordPress sur $EC2_IP..."
-
-# Vérification de l'état de K3s
-echo "🔍 Vérification de l'état de K3s..."
+echo "=== Diagnostic initial ==="
+echo "État de K3s :"
 run_ssh "sudo systemctl status k3s | grep Active"
-
-# Vérification des pods
-echo "🔍 Vérification des pods dans tous les namespaces..."
+echo ""
+echo "Liste des pods dans tous les namespaces :"
 run_ssh "sudo kubectl get pods -A"
-
-# Vérification des services
-echo "🔍 Vérification des services WordPress..."
+echo ""
+echo "Services dans le namespace WordPress :"
 run_ssh "sudo kubectl get svc -n wordpress"
-
-# Vérification des ingress
-echo "🔍 Vérification des ingress..."
+echo ""
+echo "Ingress dans tous les namespaces :"
 run_ssh "sudo kubectl get ingress -A"
+echo ""
 
-# Vérification des ports ouverts sur l'EC2
-echo "🔍 Vérification des ports ouverts sur l'EC2..."
-run_ssh "sudo netstat -tulpn | grep LISTEN"
-
-# Vérification du groupe de sécurité dans AWS
-echo "🔍 Vérification des règles de groupe de sécurité..."
-run_ssh "curl -s http://169.254.169.254/latest/meta-data/security-groups"
-
-# Création d'un script d'installation simplifié
-cat > /tmp/fix-wordpress.sh << 'EOFFIX'
-#!/bin/bash
-set -e
-
-echo "🔧 Application de correctifs pour WordPress..."
-
-# Configurez kubectl
-export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-
-# Vérifiez l'état actuel
-kubectl get pods -n wordpress
-kubectl get svc -n wordpress
-kubectl get ingress -n wordpress
-
-# Supprimez les ressources existantes de WordPress
-echo "🗑️ Suppression des ressources existantes..."
-kubectl delete deploy,svc,ingress,pvc -n wordpress --all
-
-# Installation de WordPress avec une configuration simplifiée
-echo "🚀 Installation de WordPress simplifiée..."
-cat > /tmp/minimal-wp.yaml << 'EOF'
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: wordpress
-  namespace: wordpress
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: wordpress
-  template:
-    metadata:
-      labels:
-        app: wordpress
-    spec:
-      containers:
-      - name: wordpress
-        image: wordpress:6.4
-        ports:
-        - containerPort: 80
-        env:
-        - name: WORDPRESS_DB_HOST
-          value: "rds-wp-test.cdaookoquxxr.eu-west-3.rds.amazonaws.com"
-        - name: WORDPRESS_DB_USER
-          value: "wp_user"
-        - name: WORDPRESS_DB_PASSWORD
-          value: "StrongWpUserPass456!"
-        - name: WORDPRESS_DB_NAME
-          value: "wp_database"
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: wordpress
-  namespace: wordpress
-spec:
-  type: NodePort
-  ports:
-  - port: 80
-    nodePort: 32080
-  selector:
-    app: wordpress
----
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: wordpress
-  namespace: wordpress
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
-spec:
-  rules:
-  - http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service:
-            name: wordpress
-            port:
-              number: 80
-EOF
-
-kubectl apply -f /tmp/minimal-wp.yaml
-
-# Assurez-vous que le trafic HTTP est bien routé
-echo "🔧 Configuration de Nginx Ingress pour HTTP..."
-cat > /tmp/ingress-config.yaml << 'EOF'
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: nginx-configuration
-  namespace: default
-data:
-  proxy-body-size: "64m"
-  proxy-read-timeout: "300"
-  proxy-connect-timeout: "300"
-EOF
-
-kubectl apply -f /tmp/ingress-config.yaml
-
-# Vérifier la configuration du pare-feu
-echo "🔧 Vérification des règles de pare-feu..."
-ufw status
-if [[ $(ufw status | grep "Status: active") ]]; then
-  echo "🔧 Ouverture des ports nécessaires dans UFW..."
-  ufw allow 80/tcp
-  ufw allow 443/tcp
-  ufw allow 32080/tcp
-fi
-
-# Vérification que les pods sont opérationnels
-echo "⏳ Attente que les pods soient prêts..."
-kubectl rollout status deployment/wordpress -n wordpress --timeout=120s
-
-# Affichage des informations d'accès
-echo "✅ Installation terminée!"
-echo "🌐 WordPress est accessible aux adresses suivantes:"
-PUBLIC_IP=$(curl -s http://169.254.169.254/latest/meta-data/public-ipv4)
-echo "   - http://${PUBLIC_IP}:32080"
-echo "   - http://${PUBLIC_IP}"
-
-# Vérifiez si l'accès fonctionne
-echo "🔍 Test d'accès à WordPress..."
-curl -s -I http://localhost:32080 | head -n1
-EOFFIX
-
-echo "📤 Transfert du script de correction..."
+# ------------------------------
+# Installation du certificat SSL pour l'environnement test
+# ------------------------------
+echo "=== Installation du certificat SSL pour l'environnement test ==="
+echo "Transfert des certificats vers l'instance EC2..."
 scp -o StrictHostKeyChecking=accept-new \
     -o ConnectTimeout=10 \
     -i "$SSH_KEY_PATH" \
-    /tmp/fix-wordpress.sh "$EC2_USER@$EC2_IP:/home/$EC2_USER/fix-wordpress.sh"
+    cloudflare_test.crt "$EC2_USER@$EC2_IP:/home/$EC2_USER/"
+scp -o StrictHostKeyChecking=accept-new \
+    -o ConnectTimeout=10 \
+    -i "$SSH_KEY_PATH" \
+    cloudflare_test.key "$EC2_USER@$EC2_IP:/home/$EC2_USER/"
 
-echo "🔄 Exécution du script de correction..."
-run_ssh "chmod +x /home/$EC2_USER/fix-wordpress.sh && sudo /home/$EC2_USER/fix-wordpress.sh"
+echo "Création (ou mise à jour) du secret Kubernetes 'wordpress-tls' dans le namespace wordpress..."
+# Supprimer l'ancien secret s'il existe et créer le nouveau secret TLS
+run_ssh "sudo kubectl delete secret wordpress-tls -n wordpress || true"
+run_ssh "sudo kubectl create secret tls wordpress-tls --cert=/home/$EC2_USER/cloudflare_test.crt --key=/home/$EC2_USER/cloudflare_test.key -n wordpress"
 
-echo "📋 Résumé :"
-echo "1. Vérification et simplification de l'installation WordPress"
-echo "2. Configuration d'un NodePort sur 32080"
-echo "3. Configuration de l'Ingress pour accepter tout trafic HTTP"
-echo "4. Vérification des règles de pare-feu"
+echo "Nettoyage des certificats temporaires sur l'instance..."
+run_ssh "rm -f /home/$EC2_USER/cloudflare_test.crt /home/$EC2_USER/cloudflare_test.key"
+echo "Secret 'wordpress-tls' créé et déployé."
 
-echo "🌐 WordPress devrait maintenant être accessible à :"
-echo "  - http://$EC2_IP:32080 (directement via NodePort)"
-echo "  - http://$EC2_IP (via Ingress, si configuré correctement)"
+# ------------------------------
+# Mise à jour de WORDPRESS_CONFIG_EXTRA
+# ------------------------------
+echo "=== Mise à jour du déploiement WordPress ==="
+# Ici, WP_HOME et WP_SITEURL seront définis sur https://test.mmustar.fr
+run_ssh "sudo kubectl set env deployment/wordpress WORDPRESS_CONFIG_EXTRA=\"define('WP_HOME','https://${domain_name}');define('WP_SITEURL','https://${domain_name}');\" -n wordpress"
+echo "Variable d'environnement WORDPRESS_CONFIG_EXTRA mise à jour."
+
+# ------------------------------
+# Mise à jour de l'Ingress pour activer TLS sur test.mmustar.fr
+# ------------------------------
+echo "=== Mise à jour de l'Ingress pour utiliser TLS pour ${domain_name} ==="
+INGRESS_PATCH=$(cat <<EOF
+{
+  "spec": {
+    "rules": [
+      {
+        "host": "${domain_name}",
+        "http": {
+          "paths": [
+            {
+              "backend": {
+                "service": {
+                  "name": "wordpress",
+                  "port": {
+                    "number": 80
+                  }
+                }
+              },
+              "path": "/",
+              "pathType": "Prefix"
+            }
+          ]
+        }
+      }
+    ],
+    "tls": [
+      {
+        "hosts": [
+          "${domain_name}"
+        ],
+        "secretName": "wordpress-tls"
+      }
+    ]
+  }
+}
+EOF
+)
+run_ssh "sudo kubectl patch ingress wordpress -n wordpress --type merge --patch '$INGRESS_PATCH'"
+echo "Ingress mis à jour pour ${domain_name}."
+
+# ------------------------------
+# Redémarrage du déploiement WordPress
+# ------------------------------
+echo "Redémarrage du déploiement WordPress..."
+run_ssh "sudo kubectl rollout restart deployment/wordpress -n wordpress"
+echo "Attente que les pods soient à nouveau prêts..."
+run_ssh "sudo kubectl rollout status deployment/wordpress -n wordpress --timeout=180s"
+
+# ------------------------------
+# Redémarrage d'Apache dans le conteneur
+# ------------------------------
+echo "=== Redémarrage d'Apache dans le conteneur WordPress ==="
+# Exécute la commande via kubectl exec dans le premier pod trouvé
+run_ssh "sudo kubectl exec -n wordpress \$(sudo kubectl get pod -n wordpress -l app=wordpress -o jsonpath='{.items[0].metadata.name}') -- service apache2 restart"
+echo "Apache redémarré."
+
+# ------------------------------
+# Vérification de l'accès
+# ------------------------------
+echo "=== Vérification locale dans le conteneur ==="
+run_ssh "sudo kubectl exec -n wordpress \$(sudo kubectl get pod -n wordpress -l app=wordpress -o jsonpath='{.items[0].metadata.name}') -- curl -I http://localhost/ | head -n 1"
+
 echo ""
-echo "📝 Identifiants administrateur WordPress :"
-echo "  - Nom d'utilisateur : admin (à définir lors de la première visite)"
-echo "  - Mot de passe : (à définir lors de la première visite)"
+echo "=== Résumé ==="
+echo "WORDPRESS_CONFIG_EXTRA a été défini pour forcer WP_HOME et WP_SITEURL sur https://${domain_name}"
+echo "Le secret 'wordpress-tls' a été créé avec le certificat SSL pour ${domain_name}."
+echo "L'Ingress a été patché pour servir HTTPS avec le secret 'wordpress-tls'."
+echo "Les pods ont été redémarrés."
+echo "WordPress devrait être accessible via :"
+echo "   https://${domain_name}/wp-login.php"
+
+# ------------------------------
+# Récupération et affichage des identifiants WordPress
+# ------------------------------
+echo ""
+echo "=== Récupération des identifiants WordPress ==="
+LOGIN=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i "$SSH_KEY_PATH" "$EC2_USER@$EC2_IP" "sudo kubectl get secret wordpress -n wordpress -o jsonpath='{.data.wordpress-username}' | base64 --decode" 2>/dev/null)
+if [ -z "$LOGIN" ]; then
+    LOGIN="user"
+fi
+PASSWORD=$(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -i "$SSH_KEY_PATH" "$EC2_USER@$EC2_IP" "sudo kubectl get secret wordpress -n wordpress -o jsonpath='{.data.wordpress-password}' | base64 --decode")
+echo "Login         : $LOGIN"
+echo "Mot de passe  : $PASSWORD"
+
+# ------------------------------
+# Finalisation manuelle de l'installation de WordPress
+# ------------------------------
+echo ""
+echo "=== Finalisation manuelle de l'installation de WordPress ==="
+echo "Veuillez ouvrir votre navigateur et accéder à l'URL suivante pour finaliser l'installation :"
+echo "   https://${domain_name}/wp-admin/install.php"
+echo "Une fois l'installation terminée, appuyez sur Entrée pour clôturer le déploiement..."
+read -p "Appuyez sur Entrée pour terminer..."
