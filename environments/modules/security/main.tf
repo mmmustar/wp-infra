@@ -3,7 +3,7 @@
 # Groupe de sécurité pour les instances WordPress
 resource "aws_security_group" "wordpress" {
   name_prefix = "${var.project_name}-wp-${var.environment}"
-  description = "Groupe de sécurité pour les instances WordPress"
+  description = "Groupe de securite pour les instances WordPress"
   vpc_id      = var.vpc_id
 
   # HTTP
@@ -12,7 +12,7 @@ resource "aws_security_group" "wordpress" {
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Accès HTTP"
+    description = "Acces HTTP"
   }
 
   # HTTPS
@@ -21,7 +21,7 @@ resource "aws_security_group" "wordpress" {
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
-    description = "Accès HTTPS"
+    description = "Acces HTTPS"
   }
 
   # SSH (restreindre idéalement à certaines IPs)
@@ -30,7 +30,7 @@ resource "aws_security_group" "wordpress" {
     to_port     = 22
     protocol    = "tcp"
     cidr_blocks = var.ssh_allowed_ips
-    description = "Accès SSH"
+    description = "Acces SSH"
   }
 
   # K3s API Server
@@ -105,7 +105,7 @@ resource "aws_security_group" "wordpress" {
 # Groupe de sécurité pour la base de données RDS
 resource "aws_security_group" "database" {
   name_prefix = "${var.project_name}-db-${var.environment}"
-  description = "Groupe de sécurité pour la base de données RDS"
+  description = "Groupe de securite pour la base de donnees RDS"
   vpc_id      = var.vpc_id
 
   # MySQL

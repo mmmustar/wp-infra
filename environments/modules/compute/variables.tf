@@ -49,13 +49,11 @@ variable "instance_profile" {
 variable "root_volume_size" {
   description = "Taille du volume racine en Go"
   type        = number
-  default     = 20
 }
 
 variable "data_volume_size" {
   description = "Taille du volume de données en Go"
   type        = number
-  default     = 50
 }
 
 variable "eip_allocation_id" {
