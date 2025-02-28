@@ -15,22 +15,12 @@ output "private_subnet_ids" {
   value       = aws_subnet.private[*].id
 }
 
-output "wordpress_sg_id" {
-  description = "ID du groupe de sécurité pour l'instance EC2"
-  value       = aws_security_group.wordpress.id
+output "public_route_table_id" {
+  description = "ID de la table de routage publique"
+  value       = aws_route_table.public.id
 }
 
-output "db_sg_id" {
-  description = "ID du groupe de sécurité pour la base de données RDS"
-  value       = aws_security_group.db.id
-}
-
-output "eip_id" {
-  description = "ID de l'Elastic IP"
-  value       = aws_eip.wordpress.id
-}
-
-output "eip_public_ip" {
-  description = "Adresse IP publique de l'Elastic IP"
-  value       = aws_eip.wordpress.public_ip
+output "private_route_table_id" {
+  description = "ID de la table de routage privée"
+  value       = aws_route_table.private.id
 }

@@ -1,13 +1,22 @@
+# environments/test/variables.tf
+
+# Variables générales
+variable "aws_region" {
+  description = "Région AWS où déployer les ressources"
+  type        = string
+}
+
 variable "environment" {
-  description = "Environnement"
+  description = "Environnement (test/prod)"
   type        = string
 }
 
 variable "project_name" {
-  description = "Nom du projet"
+  description = "Nom du projet pour le tagging des ressources"
   type        = string
 }
 
+# Variables réseau
 variable "vpc_cidr" {
   description = "CIDR block pour le VPC"
   type        = string
@@ -23,11 +32,46 @@ variable "private_subnet_cidrs" {
   type        = list(string)
 }
 
-variable "ami_id" {
-  description = "ID de l'AMI à utiliser pour l'instance EC2"
+# Variables EIP
+variable "eip_allocation_id" {
+  description = "ID d'allocation de l'Elastic IP existante"
   type        = string
 }
 
+# Variables base de données
+variable "db_allocated_storage" {
+  description = "Taille de stockage allouée pour RDS en Go"
+  type        = number
+}
+
+variable "db_instance_class" {
+  description = "Classe d'instance RDS"
+  type        = string
+}
+
+variable "db_name" {
+  description = "Nom de la base de données"
+  type        = string
+}
+
+variable "db_username" {
+  description = "Nom d'utilisateur de la base de données"
+  type        = string
+}
+
+variable "db_password" {
+  description = "Mot de passe de la base de données"
+  type        = string
+  sensitive   = true
+}
+
+variable "db_multi_az" {
+  description = "Activer le multi-AZ pour la haute disponibilité"
+  type        = bool
+  default     = false
+}
+
+# Variables Compute
 variable "instance_type" {
   description = "Type d'instance EC2"
   type        = string
@@ -38,57 +82,23 @@ variable "key_name" {
   type        = string
 }
 
-variable "db_name" {
-  description = "Nom de la base de données MySQL"
-  type        = string
-}
-
-variable "db_username" {
-  description = "Nom d'utilisateur pour la base de données"
-  type        = string
-}
-
-variable "db_password" {
-  description = "Mot de passe pour la base de données"
-  type        = string
-}
-
-variable "db_allocated_storage" {
-  description = "Taille de stockage allouée pour l'instance RDS (GB)"
-  type        = number
-}
-
-variable "db_instance_class" {
-  description = "Type d'instance pour l'instance RDS"
-  type        = string
-}
-
-variable "eip_id" {
-  description = "ID de l'EIP à utiliser. Laissez vide pour utiliser l'EIP créé automatiquement dans le module network."
-  type        = string
-}
-
 variable "root_volume_size" {
   description = "Taille du volume racine en Go"
   type        = number
 }
 
-variable "db_storage_type" {
-  description = "Type de stockage pour l'instance RDS"
-  type        = string
+variable "data_volume_size" {
+  description = "Taille du volume de données en Go"
+  type        = number
 }
 
-variable "db_engine_version" {
-  description = "Version du moteur MySQL pour l'instance RDS"
+variable "ami_id" {
+  description = "ID de l'AMI pour l'instance EC2 (vide = dernière Ubuntu 20.04)"
   type        = string
+  default     = ""
 }
 
-variable "db_parameter_group_name" {
-  description = "Nom du groupe de paramètres pour l'instance RDS"
+variable "wordpress_domain" {
+  description = "Nom de domaine pour le site WordPress"
   type        = string
-}
-
-variable "db_skip_final_snapshot" {
-  description = "Si true, aucun snapshot final ne sera créé lors de la suppression"
-  type        = bool
 }

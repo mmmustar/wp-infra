@@ -1,25 +1,27 @@
+# environments/modules/compute/variables.tf
+
 variable "environment" {
   description = "Environnement (test/prod)"
   type        = string
 }
 
 variable "project_name" {
-  description = "Nom du projet"
+  description = "Nom du projet pour le tagging des ressources"
+  type        = string
+}
+
+variable "vpc_id" {
+  description = "ID du VPC"
   type        = string
 }
 
 variable "subnet_id" {
-  description = "ID du sous-réseau où sera créée l'instance EC2"
+  description = "ID du sous-réseau public"
   type        = string
 }
 
 variable "security_group_id" {
-  description = "ID du groupe de sécurité pour l'instance EC2"
-  type        = string
-}
-
-variable "ami_id" {
-  description = "ID de l'AMI à utiliser pour l'instance EC2. Si vide, l'AMI Ubuntu le plus récent sera utilisé."
+  description = "ID du groupe de sécurité"
   type        = string
 }
 
@@ -28,33 +30,35 @@ variable "instance_type" {
   type        = string
 }
 
+variable "ami_id" {
+  description = "ID de l'AMI (laisser vide pour utiliser la dernière Ubuntu 20.04)"
+  type        = string
+  default     = ""
+}
+
 variable "key_name" {
   description = "Nom de la paire de clés SSH"
+  type        = string
+}
+
+variable "instance_profile" {
+  description = "Nom du profil d'instance IAM"
   type        = string
 }
 
 variable "root_volume_size" {
   description = "Taille du volume racine en Go"
   type        = number
+  default     = 20
 }
 
-variable "db_name" {
-  description = "Nom de la base de données pour la configuration WordPress"
-  type        = string
+variable "data_volume_size" {
+  description = "Taille du volume de données en Go"
+  type        = number
+  default     = 50
 }
 
-variable "db_username" {
-  description = "Nom d'utilisateur de la base de données pour la configuration WordPress"
-  type        = string
-}
-
-variable "db_password" {
-  description = "Mot de passe de la base de données pour la configuration WordPress"
-  type        = string
-  sensitive   = true
-}
-
-variable "db_endpoint" {
-  description = "Point de terminaison de la base de données pour la configuration WordPress"
+variable "eip_allocation_id" {
+  description = "ID d'allocation de l'Elastic IP existante"
   type        = string
 }
