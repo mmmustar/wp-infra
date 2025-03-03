@@ -1,0 +1,23 @@
+wordpressUsername: admin
+wordpressPassword: "CusoEalB7ZKetEgO"
+externalDatabase:
+  host: wordpress-mmustar-rds-wp-test.cdaookoquxxr.eu-west-3.rds.amazonaws.com
+  user: wp_user
+  password: "StrongWpUserPass456!"
+  database: wptest
+mariadb:
+  enabled: false
+service:
+  type: ClusterIP
+persistence:
+  enabled: true
+  storageClass: local-path
+ingress:
+  enabled: true
+  hostname: test.mmustar.fr
+  ingressClassName: traefik
+  tls: true
+  tlsSecret: wordpress-tls
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
