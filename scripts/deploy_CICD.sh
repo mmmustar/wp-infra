@@ -36,7 +36,66 @@ deploy_ssl_secret() {
         -n wordpress --dry-run=client -o yaml | kubectl apply -f -'
 }
 
-# Déploiement de WordPress via Helm
+# Installation de Traefik avec configuration TLS explicite
+install_traefik_properly() {
+    echo "Configuration de Traefik avec support TLS amélioré..."
+    
+    if ! kubectl get deployment -n kube-system traefik >/dev/null 2>&1; then
+        echo "Installation de Traefik..."
+        
+        # Créer un fichier de valeurs pour Traefik avec configuration TLS explicite
+        cat > /home/$EC2_USER/traefik-values.yaml << EOF
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: default
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+EOF
+        
+        run_cmd 'helm repo add traefik https://helm.traefik.io/traefik'
+        run_cmd 'helm repo update'
+        run_cmd 'helm upgrade --install traefik traefik/traefik \
+            --namespace kube-system \
+            -f /home/'$EC2_USER'/traefik-values.yaml'
+    else
+        echo "Traefik est déjà installé, application de la configuration..."
+        # Mettre à jour la configuration de Traefik existant
+        cat > /home/$EC2_USER/traefik-values.yaml << EOF
+entryPoints:
+  web:
+    address: ":80"
+    http:
+      redirections:
+        entryPoint:
+          to: websecure
+          scheme: https
+  websecure:
+    address: ":443"
+    http:
+      tls:
+        certResolver: default
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+EOF
+        run_cmd 'helm upgrade traefik traefik/traefik \
+            --namespace kube-system \
+            -f /home/'$EC2_USER'/traefik-values.yaml'
+    fi
+}
+
+# Déploiement de WordPress via Helm avec valeurs TLS explicites
 deploy_wordpress() {
     echo "Déploiement de WordPress..."
     # Vérifier que le fichier values.yaml existe
@@ -56,25 +115,39 @@ deploy_wordpress() {
         --timeout 10m'
 }
 
-# Patch de l'Ingress pour forcer la section TLS
-patch_ingress_tls() {
-    echo "Application du patch TLS pour l'Ingress..."
-    run_cmd 'kubectl patch ingress wordpress -n wordpress --type merge -p '\''{"spec": {"tls": [{"hosts": ["'$DOMAIN_NAME'"], "secretName": "wordpress-tls"}]}}'\'''
-}
+# Création d'un Ingress explicite avec configuration TLS correcte
+create_proper_ingress() {
+    echo "Création d'un Ingress avec configuration TLS explicite..."
+    
+    cat > /home/$EC2_USER/wordpress-ingress.yaml << EOF
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: wordpress-secure
+  namespace: wordpress
+  annotations:
+    kubernetes.io/ingress.class: "traefik"
+    traefik.ingress.kubernetes.io/router.entrypoints: "websecure"
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  tls:
+  - hosts:
+    - $DOMAIN_NAME
+    secretName: wordpress-tls
+  rules:
+  - host: $DOMAIN_NAME
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: wordpress
+            port:
+              number: 80
+EOF
 
-# Installation de Traefik s'il n'est pas déjà installé
-install_traefik_if_needed() {
-    if ! kubectl get deployment -n kube-system traefik >/dev/null 2>&1; then
-        echo "Installation de Traefik..."
-        run_cmd 'helm repo add traefik https://helm.traefik.io/traefik'
-        run_cmd 'helm repo update'
-        run_cmd 'helm install traefik traefik/traefik \
-            --namespace kube-system \
-            --set ingressClass.enabled=true \
-            --set ingressClass.isDefaultClass=true'
-    else
-        echo "Traefik est déjà installé, omission de cette étape."
-    fi
+    run_cmd 'kubectl apply -f /home/'$EC2_USER'/wordpress-ingress.yaml'
 }
 
 # Fonction principale
@@ -84,18 +157,28 @@ main() {
 
     # Étapes de déploiement
     prepare_k8s_env
-    install_traefik_if_needed
     deploy_ssl_secret
+    install_traefik_properly
     deploy_wordpress
-    patch_ingress_tls
+    
+    # Au lieu d'utiliser le patch, créer un Ingress propre
+    create_proper_ingress
+    
+    # Attendre quelques secondes pour que tout se propage
+    echo "Attente de 10 secondes pour que les configurations se propagent..."
+    sleep 10
 
-    echo "WordPress est déployé et accessible via : https://$DOMAIN_NAME"
+    echo "WordPress est déployé et devrait être accessible via : https://$DOMAIN_NAME"
     echo "Pour obtenir le mot de passe admin, exécutez:"
     echo "kubectl get secret wordpress -n wordpress -o jsonpath=\"{.data.wordpress-password}\" | base64 -d"
     
     # Afficher le mot de passe
     PASSWORD=$(kubectl get secret wordpress -n wordpress -o jsonpath="{.data.wordpress-password}" | base64 -d)
     echo "Mot de passe admin: $PASSWORD"
+    
+    # Afficher l'état des ingress pour vérification
+    echo "État des Ingress :"
+    kubectl get ingress -n wordpress
 }
 
 # Exécution du script
