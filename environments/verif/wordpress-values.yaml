@@ -1,7 +1,7 @@
 wordpressUsername: admin
 wordpressPassword: "CusoEalB7ZKetEgO"
 externalDatabase:
-  host: wordpress-mmustar-rds-wp-test.cdaookoquxxr.eu-west-3.rds.amazonaws.com
+  host: "NOUVELLE_ADRESSE_DB" 
   user: wp_user
   password: "StrongWpUserPass456!"
   database: wptest

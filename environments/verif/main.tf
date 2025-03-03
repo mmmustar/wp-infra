@@ -85,7 +85,7 @@ module "compute" {
 
 # AWS Secrets Manager pour stocker tous les secrets nécessaires
 resource "aws_secretsmanager_secret" "wordpress_config" {
-  name        = "${var.project_name}/${var.environment}/wordpress-config"
+  name        = "${var.project_name}/${var.environment}/wordpress-config2"
   description = "Configuration complète pour WordPress"
   
   # Empêcher la destruction accidentelle des secrets
