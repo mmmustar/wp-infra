@@ -107,6 +107,10 @@ install_prometheus_stack() {
     fi
     helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
     helm repo update
+    
+    # Créer le namespace monitoring si inexistant
+    kubectl create namespace monitoring || echo "Le namespace monitoring existe déjà"
+    
     helm install prometheus prometheus-community/kube-prometheus-stack \
         --namespace monitoring -f /home/$EC2_USER/prometheus-values.yaml --timeout 10m
     sleep 30
