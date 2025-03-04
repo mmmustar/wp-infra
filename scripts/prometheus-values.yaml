@@ -13,6 +13,10 @@ prometheus:
       limits:
         memory: 1Gi
         cpu: 1000m
+  service:
+    # Assurez-vous que le nom du service est correct
+    # Par défaut, kube-prometheus-stack crée un service nommé "prometheus-operated"
+    port: 9090
 
   ingress:
     enabled: true
@@ -21,6 +25,9 @@ prometheus:
       traefik.ingress.kubernetes.io/router.entrypoints: websecure
     hosts:
       - prometheus-monitoring.mmustar.fr
+    paths:
+      - /
+    pathType: Prefix
     tls:
       - secretName: monitoring-tls
         hosts:
@@ -35,6 +42,9 @@ alertmanager:
       traefik.ingress.kubernetes.io/router.entrypoints: websecure
     hosts:
       - alertmanager-monitoring.mmustar.fr
+    paths:
+      - /
+    pathType: Prefix
     tls:
       - secretName: monitoring-tls
         hosts:
@@ -59,6 +69,9 @@ grafana:
       traefik.ingress.kubernetes.io/router.entrypoints: websecure
     hosts:
       - grafana-monitoring.mmustar.fr
+    paths:
+      - /
+    pathType: Prefix
     tls:
       - secretName: monitoring-tls
         hosts:
