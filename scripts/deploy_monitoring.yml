@@ -2,26 +2,14 @@ name: Deploy Monitoring Stack
 
 on:
   push:
-    branches:
-      - mono
+    branches: [mono]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environnement de déploiement'
-        required: true
-        default: 'mono'
-        type: choice
-        options:
-          - test
-          - verif
-          - prod
-          - mono
 
 jobs:
   deploy-monitoring:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v3
 
       - name: Setup SSH
@@ -29,140 +17,32 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo -e "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" > ~/.ssh/config
+          echo -e "Host *\n\tStrictHostKeyChecking no" > ~/.ssh/config
 
-      - name: Set Environment Variables
-        id: env-vars
+          - name: Create certificate files and Kubernetes secrets
+          run: |
+            # Créer les fichiers de certificat et clé
+            echo "${{ secrets.CERTIF_MONO }}" > mono.crt
+            echo "${{ secrets.KEY_MONO }}" > mono.key
+        
+            # Créer le namespace monitoring s'il n'existe pas
+            kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        
+            # Créer le secret TLS dans Kubernetes
+            kubectl create secret tls monitoring-tls \
+              --cert=mono.crt \
+              --key=mono.key \
+              -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Transfer files
         run: |
-          # Détermine l'environnement
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            DEPLOY_ENV="${{ github.event.inputs.environment }}"
-          else
-            DEPLOY_ENV="mono"
-          fi
-          
-          # Configure les variables selon l'environnement
-          if [[ "$DEPLOY_ENV" == "test" ]]; then
-            echo "SERVER_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
-            echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
-          elif [[ "$DEPLOY_ENV" == "verif" ]]; then
-            echo "SERVER_IP=${{ secrets.EC2_IP_VERIF }}" >> $GITHUB_ENV
-            echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
-          elif [[ "$DEPLOY_ENV" == "prod" ]]; then
-            echo "SERVER_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
-            echo "DOMAIN_NAME=mmustar.fr" >> $GITHUB_ENV
-          elif [[ "$DEPLOY_ENV" == "mono" ]]; then
-            echo "SERVER_IP=${{ secrets.EC2_IP_MONOV }}" >> $GITHUB_ENV
-            echo "DOMAIN_NAME=mmustar.fr" >> $GITHUB_ENV
-          fi
-          
-          echo "Selected environment: $DEPLOY_ENV"
-          echo "DOMAIN_NAME: ${{ env.DOMAIN_NAME }}"
+          scp -i ~/.ssh/id_rsa prometheus-values.yaml \
+            ubuntu@${{ secrets.EC2_IP }}:/home/ubuntu/
 
-      - name: Create certificate files
+      - name: Execute deployment
         run: |
-          echo "${{ secrets.CLOUDFLARE_TEST_CRT }}" > cloudflare_test.crt
-          echo "${{ secrets.CLOUDFLARE_TEST_KEY }}" > cloudflare_test.key
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP }} \
+            "sudo apt-get update && sudo apt-get install -y curl && sudo /home/ubuntu/deploy_mono.sh"
 
-      - name: Create Prometheus Stack values file
-        run: |
-          cat > prometheus-values.yaml << EOF
-          grafana:
-            adminPassword: "${{ secrets.MONO_PASSWORD }}"
-            persistence:
-              enabled: true
-              storageClassName: local-path
-              size: 8Gi
-            ingress:
-              enabled: true
-              ingressClassName: traefik
-              hosts:
-                - grafana-monitoring.mmustar.fr
-              tls:
-                - secretName: grafana-tls
-                  hosts:
-                    - grafana-monitoring.mmustar.fr
-              annotations:
-                traefik.ingress.kubernetes.io/router.entrypoints: websecure
-
-          prometheus:
-            ingress:
-              enabled: true
-              ingressClassName: traefik
-              hosts:
-                - prometheus-monitoring.mmustar.fr
-              tls:
-                - secretName: prometheus-tls
-                  hosts:
-                    - prometheus-monitoring.mmustar.fr
-              annotations:
-                traefik.ingress.kubernetes.io/router.entrypoints: websecure
-            prometheusSpec:
-              storage:
-                volumeClaimTemplate:
-                  spec:
-                    storageClassName: local-path
-                    accessModes: ["ReadWriteOnce"]
-                    resources:
-                      requests:
-                        storage: 10Gi
-
-          alertmanager:
-            ingress:
-              enabled: true
-              ingressClassName: traefik
-              hosts:
-                - alertmanager-monitoring.mmustar.fr
-              tls:
-                - secretName: alertmanager-tls
-                  hosts:
-                    - alertmanager-monitoring.mmustar.fr
-              annotations:
-                traefik.ingress.kubernetes.io/router.entrypoints: websecure
-            alertmanagerSpec:
-              storage:
-                volumeClaimTemplate:
-                  spec:
-                    storageClassName: local-path
-                    accessModes: ["ReadWriteOnce"]
-                    resources:
-                      requests:
-                        storage: 2Gi
-          EOF
-
-      - name: Verify variables
-        run: |
-          echo "SERVER_IP is set (not displaying for security)"
-          echo "DOMAIN_NAME: ${{ env.DOMAIN_NAME }}"
-          
-      - name: Copy files to EC2 instance
-        run: |
-          scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa cloudflare_test.crt ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa cloudflare_test.key ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa scripts/deploy_mono.sh ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
-
-      - name: Execute deployment script
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo /home/ubuntu/deploy_mono.sh"
-
-      - name: Cleanup sensitive files
-        if: always()
-        run: |
-          rm -f ~/.ssh/id_rsa
-          rm -f cloudflare_test.crt cloudflare_test.key
-          rm -f prometheus-values.yaml
-
-      - name: Display Access URLs
-        run: |
-          echo "====================================================="
-          echo "Deployment successful! Access URLs:"
-          echo "---------------------------------------------------"
-          echo "Grafana:      https://grafana-monitoring.mmustar.fr"
-          echo "Prometheus:   https://prometheus-monitoring.mmustar.fr"
-          echo "AlertManager: https://alertmanager-monitoring.mmustar.fr"
-          echo "====================================================="
-          echo "Credentials:"
-          echo "Grafana username: admin"
-          echo "Grafana password: [Set via GitHub Secret]"
-          echo "====================================================="
+      - name: Cleanup
+        run: rm -f ~/.ssh/id_rsa

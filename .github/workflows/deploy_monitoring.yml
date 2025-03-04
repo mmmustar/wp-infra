@@ -19,20 +19,21 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo -e "Host *\n\tStrictHostKeyChecking no" > ~/.ssh/config
 
-          - name: Create certificate files and Kubernetes secrets
-          run: |
-            # Créer les fichiers de certificat et clé
+      - name: Create certificate files and secrets
+        run: |
+            # Créer le dossier .ssh
+            mkdir -p ~/.ssh
+        
+            # Générer les fichiers de certificat
             echo "${{ secrets.CERTIF_MONO }}" > mono.crt
             echo "${{ secrets.KEY_MONO }}" > mono.key
         
-            # Créer le namespace monitoring s'il n'existe pas
-            kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-        
-            # Créer le secret TLS dans Kubernetes
+            # Créer le secret Kubernetes
             kubectl create secret tls monitoring-tls \
               --cert=mono.crt \
               --key=mono.key \
               -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+
 
       - name: Transfer files
         run: |
