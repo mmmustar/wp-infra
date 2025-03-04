@@ -56,9 +56,8 @@ jobs:
             echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
           fi
           
-          echo "Environment: $DEPLOY_ENV"
-          echo "SERVER_IP is set" # Sécurité: ne pas afficher l'IP
-          echo "DOMAIN_NAME: $DOMAIN_NAME"
+          echo "Selected environment: $DEPLOY_ENV"
+          echo "DOMAIN_NAME: ${{ env.DOMAIN_NAME }}"
 
       - name: Create certificate files
         run: |
@@ -131,59 +130,16 @@ jobs:
                         storage: 2Gi
           EOF
 
-      - name: Verify variables
+      - name: Copy deployment script and files to EC2
         run: |
-          echo "SERVER_IP is set (not displaying for security)"
-          echo "DOMAIN_NAME: ${{ env.DOMAIN_NAME }}"
-          
-      - name: Copy files to EC2 instance
-        run: |
+          scp -i ~/.ssh/id_rsa scripts/deploy_mono.sh ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa cloudflare_test.crt ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa cloudflare_test.key ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
 
-      - name: Install Monitoring Stack on EC2
+      - name: Execute deployment script
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "
-            # Attendre que K3s soit prêt
-            echo 'Vérification que K3s est bien démarré...'
-            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
-            until kubectl get nodes; do
-              echo 'Attente de K3s...'
-              sleep 5
-            done
-
-            # Créer le namespace monitoring
-            echo 'Création du namespace monitoring...'
-            kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-            # Créer les secrets TLS
-            echo 'Création des secrets TLS...'
-            kubectl create secret tls grafana-tls --cert=/home/ubuntu/cloudflare_test.crt --key=/home/ubuntu/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -
-            kubectl create secret tls prometheus-tls --cert=/home/ubuntu/cloudflare_test.crt --key=/home/ubuntu/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -
-            kubectl create secret tls alertmanager-tls --cert=/home/ubuntu/cloudflare_test.crt --key=/home/ubuntu/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -
-
-            # Installer Traefik si nécessaire
-            if ! kubectl get deployment -n kube-system traefik >/dev/null 2>&1; then
-              echo 'Installation de Traefik...'
-              helm repo add traefik https://helm.traefik.io/traefik
-              helm repo update
-              helm install traefik traefik/traefik \
-                --namespace kube-system \
-                --set ingressClass.enabled=true \
-                --set ingressClass.isDefaultClass=true
-            fi
-
-            # Installer Prometheus Stack
-            echo 'Installation de Prometheus Stack...'
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-            helm repo update
-            helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-              --namespace monitoring \
-              -f /home/ubuntu/prometheus-values.yaml \
-              --version 45.27.2 \
-              --timeout 10m
-          "
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo /home/ubuntu/deploy_mono.sh \"${{ env.DOMAIN_NAME }}\""
 
       - name: Cleanup sensitive files
         if: always()
@@ -203,5 +159,5 @@ jobs:
           echo "====================================================="
           echo "Credentials:"
           echo "Grafana username: admin"
-          echo "Grafana password: [Set via GitHub Secret MONO_PASSWORD]"
+          echo "Grafana password: [Set via GitHub Secret]"
           echo "====================================================="
