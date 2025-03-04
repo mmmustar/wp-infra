@@ -8,7 +8,7 @@ on:
 jobs:
   deploy-monitoring:
     runs-on: ubuntu-latest
-    timeout-minutes: 40  # Augmenter le timeout global du job
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v3
@@ -19,7 +19,6 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          # Configuration SSH avec ServerAliveInterval pour éviter les déconnexions
           cat > ~/.ssh/config << EOF
           Host *
             StrictHostKeyChecking no
@@ -32,54 +31,87 @@ jobs:
 
       - name: Create certificate files
         run: |
-          # Créer les fichiers de certificat et clé
           echo "${{ secrets.CERTIF_MONO }}" > mono.crt
           echo "${{ secrets.KEY_MONO }}" > mono.key
 
-      - name: Create optimized monitoring script
+      - name: Fix Helm permissions and install dependencies
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "
+            # Correction des problèmes de permissions Helm
+            sudo rm -f /home/ubuntu/.config/helm/repositories.lock
+            sudo chown -R ubuntu:ubuntu /home/ubuntu/.config /home/ubuntu/.cache 2>/dev/null || true
+            
+            # Installation de Helm si nécessaire
+            if ! command -v helm &> /dev/null; then
+              curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+            fi
+            
+            # Configuration de K3s
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            sudo chmod 644 \$KUBECONFIG
+            
+            # Ajout des dépôts Helm
+            helm repo add traefik https://helm.traefik.io/traefik || true
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+            helm repo update
+          "
+
+      - name: Create deployment script
         run: |
           cat > deploy_monitoring.sh << 'EOF'
           #!/bin/bash
           set -eo pipefail
 
-          echo "--- Début du déploiement de la stack monitoring ---"
-          
           # Configuration
           KUBECONFIG="/etc/rancher/k3s/k3s.yaml"
           export KUBECONFIG
+
+          echo "--- Démarrage du déploiement de la stack monitoring ---"
           
-          # Vérifier que les fichiers nécessaires existent
-          ls -la /home/ubuntu/mono.crt /home/ubuntu/mono.key /home/ubuntu/prometheus-values.yaml
+          # Vérification des fichiers
+          if [ ! -f "/home/ubuntu/mono.crt" ] || [ ! -f "/home/ubuntu/mono.key" ] || [ ! -f "/home/ubuntu/prometheus-values.yaml" ]; then
+            echo "Erreur: Fichiers de certificats ou de configuration manquants"
+            ls -la /home/ubuntu/
+            exit 1
+          fi
+
+          # Installation de Traefik
+          echo "--- Déploiement de Traefik ---"
+          helm upgrade --install traefik traefik/traefik \
+            --namespace kube-system \
+            --set ingressClass.enabled=true \
+            --set ingressClass.isDefaultClass=true \
+            --atomic \
+            --wait \
+            --timeout 5m
           
-          # Créer le namespace monitoring
-          echo "Création du namespace monitoring..."
+          # Création du namespace monitoring
+          echo "--- Création du namespace monitoring ---"
           kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
           
-          # Créer le secret TLS
-          echo "Création du secret TLS..."
+          # Création du secret TLS
+          echo "--- Création du secret TLS ---"
           kubectl create secret tls monitoring-tls \
             --cert=/home/ubuntu/mono.crt \
             --key=/home/ubuntu/mono.key \
             --namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
           
-          # Déployer Prometheus Stack
-          echo "Déploiement de Prometheus Stack..."
-          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-          helm repo update
-          
-          # Déployer avec un timeout plus court
+          # Déploiement de Prometheus Stack
+          echo "--- Déploiement de Prometheus Stack ---"
           helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             --create-namespace \
             -f /home/ubuntu/prometheus-values.yaml \
             --atomic \
-            --wait \
             --timeout 15m
           
           echo "--- Déploiement terminé avec succès ---"
           
-          # Afficher les ressources déployées
+          # Affichage des ressources
+          echo "--- Liste des pods ---"
           kubectl get pods -n monitoring
+          
+          echo "--- Liste des ingress ---"
           kubectl get ingress -n monitoring
           EOF
           
@@ -92,38 +124,14 @@ jobs:
           scp -i ~/.ssh/id_rsa mono.key ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa deploy_monitoring.sh ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
 
-      - name: Install Traefik (peut être omis si déjà installé)
+      - name: Execute deployment script
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "
-            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
-            helm repo add traefik https://helm.traefik.io/traefik && \
-            helm repo update && \
-            helm upgrade --install traefik traefik/traefik \
-              --namespace kube-system \
-              --set ingressClass.enabled=true \
-              --set ingressClass.isDefaultClass=true \
-              --atomic \
-              --wait \
-              --timeout 5m
-          "
-
-      - name: Execute Prometheus Stack deployment
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "sudo -E KUBECONFIG=/etc/rancher/k3s/k3s.yaml bash /home/ubuntu/deploy_monitoring.sh"
-
-      - name: Check deployment status
-        if: always()
-        run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "
-            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && \
-            echo 'Statut des pods:' && \
-            kubectl get pods -n monitoring && \
-            echo 'Statut des ingress:' && \
-            kubectl get ingress -n monitoring
-          "
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "sudo -E bash /home/ubuntu/deploy_monitoring.sh"
 
       - name: Cleanup
         if: always()
         run: |
           rm -f ~/.ssh/id_rsa
           rm -f mono.crt mono.key
+
+      #test
