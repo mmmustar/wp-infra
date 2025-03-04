@@ -87,23 +87,26 @@ jobs:
             --key=/home/ubuntu/mono.key \
             --namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
           
-          # Nettoyage de l'installation précédente si elle est bloquée
-          echo "--- Nettoyage des installations précédentes ---"
+          # Nettoyage complet avant réinstallation
+          echo "--- Nettoyage complet avant réinstallation ---"
           
-          # Suppression des releases Helm existants
+          # Suppression des ingress existants pour éviter les conflits
+          kubectl delete ingress -n monitoring --all --grace-period=0 --force || true
+          
+          # Suppression des releases Helm existantes
           helm uninstall prometheus -n monitoring --wait=false || true
           
-          # Suppression des secrets Helm
+          # Suppression des secrets Helm et autres ressources
           kubectl delete secret -n monitoring -l owner=helm,name=prometheus --grace-period=0 --force || true
           kubectl delete secret -n monitoring -l name=prometheus,status=pending --grace-period=0 --force || true
           
-          # Attendre un peu
-          echo "Attente de 10 secondes après le nettoyage..."
-          sleep 10
+          # Attendre pour s'assurer que tout est bien nettoyé
+          echo "Attente de 15 secondes après le nettoyage..."
+          sleep 15
           
           # Déploiement de Prometheus Stack
           echo "--- Déploiement de Prometheus Stack ---"
-          helm install prometheus prometheus-community/kube-prometheus-stack \
+          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
             --namespace monitoring \
             -f /home/ubuntu/prometheus-values.yaml \
             --timeout 15m
@@ -116,6 +119,10 @@ jobs:
           
           echo "--- Liste des ingress ---"
           kubectl get ingress -n monitoring
+          
+          # Afficher les noms des services pour déboguer
+          echo "--- Liste des services ---"
+          kubectl get services -n monitoring
           
           echo "--- Accès URLs ---"
           echo "- Grafana:      https://grafana-monitoring.mmustar.fr"
@@ -135,6 +142,8 @@ jobs:
       - name: Reset Stuck Helm Operations
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && helm uninstall prometheus -n monitoring --wait=false || true"
+          
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && kubectl delete ingress -n monitoring --all --grace-period=0 --force || true"
           
           ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "export KUBECONFIG=/etc/rancher/k3s/k3s.yaml && kubectl delete secret -n monitoring -l owner=helm,name=prometheus --force --grace-period=0 || true"
           
