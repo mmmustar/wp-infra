@@ -34,29 +34,23 @@ jobs:
           echo "${{ secrets.CERTIF_MONO }}" > mono.crt
           echo "${{ secrets.KEY_MONO }}" > mono.key
 
-      - name: Fix Helm permissions and install dependencies
+      - name: Fix Helm permissions and check status
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "
             # Correction des problèmes de permissions Helm
             sudo rm -f /home/ubuntu/.config/helm/repositories.lock
             sudo chown -R ubuntu:ubuntu /home/ubuntu/.config /home/ubuntu/.cache 2>/dev/null || true
             
-            # Installation de Helm si nécessaire
-            if ! command -v helm &> /dev/null; then
-              curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-            fi
-            
             # Configuration de K3s
             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
             sudo chmod 644 \$KUBECONFIG
             
-            # Ajout des dépôts Helm
-            helm repo add traefik https://helm.traefik.io/traefik || true
-            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
-            helm repo update
+            # Vérification de l'état des déploiements Helm
+            echo 'Statut des déploiements Helm:'
+            helm ls -n monitoring --all || true
           "
 
-      - name: Create deployment script
+      - name: Create deployment script with rollback management
         run: |
           cat > deploy_monitoring.sh << 'EOF'
           #!/bin/bash
@@ -74,6 +68,11 @@ jobs:
             ls -la /home/ubuntu/
             exit 1
           fi
+
+          # Ajout des dépôts Helm
+          helm repo add traefik https://helm.traefik.io/traefik || true
+          helm repo add prometheus-community https://prometheus-community.github.io/helm-charts || true
+          helm repo update
 
           # Installation de Traefik
           echo "--- Déploiement de Traefik ---"
@@ -96,14 +95,46 @@ jobs:
             --key=/home/ubuntu/mono.key \
             --namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
           
+          # Vérifier si une opération Helm est en cours sur le release prometheus
+          echo "--- Vérification des opérations Helm en cours ---"
+          if kubectl get secret -n monitoring -l owner=helm,status=pending -o name | grep prometheus; then
+            echo "Une opération Helm est en cours. Tentative de nettoyage..."
+            
+            # Tentative de nettoyage des finalizers si bloqués
+            kubectl get secret -n monitoring -l owner=helm,status=pending -o name | \
+              xargs -r kubectl patch -n monitoring --type json --patch='[{"op": "remove", "path": "/metadata/finalizers"}]' || true
+            
+            # Tentative de suppression des secrets d'opération en cours
+            kubectl get secret -n monitoring -l owner=helm,status=pending -o name | \
+              xargs -r kubectl delete -n monitoring || true
+            
+            # Rollback si un déploiement est en échec
+            helm -n monitoring rollback prometheus || true
+            
+            echo "Attente de 10 secondes après le nettoyage..."
+            sleep 10
+          fi
+          
           # Déploiement de Prometheus Stack
           echo "--- Déploiement de Prometheus Stack ---"
-          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-            --namespace monitoring \
-            --create-namespace \
-            -f /home/ubuntu/prometheus-values.yaml \
-            --atomic \
-            --timeout 15m
+          
+          # Vérifier si le chart est déjà installé
+          if helm status -n monitoring prometheus &>/dev/null; then
+            echo "Le release prometheus existe déjà, mise à jour..."
+            
+            # Utiliser --force pour passer outre les opérations en cours
+            helm upgrade prometheus prometheus-community/kube-prometheus-stack \
+              --namespace monitoring \
+              --force \
+              -f /home/ubuntu/prometheus-values.yaml \
+              --timeout 15m
+          else
+            echo "Installation d'un nouveau release prometheus..."
+            helm install prometheus prometheus-community/kube-prometheus-stack \
+              --namespace monitoring \
+              -f /home/ubuntu/prometheus-values.yaml \
+              --timeout 15m
+          fi
           
           echo "--- Déploiement terminé avec succès ---"
           
@@ -113,6 +144,11 @@ jobs:
           
           echo "--- Liste des ingress ---"
           kubectl get ingress -n monitoring
+          
+          echo "--- Accès URLs ---"
+          echo "- Grafana:      https://grafana-monitoring.mmustar.fr"
+          echo "- Prometheus:   https://prometheus-monitoring.mmustar.fr"
+          echo "- AlertManager: https://alertmanager-monitoring.mmustar.fr"
           EOF
           
           chmod +x deploy_monitoring.sh
@@ -124,6 +160,23 @@ jobs:
           scp -i ~/.ssh/id_rsa mono.key ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa deploy_monitoring.sh ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
 
+      - name: Reset Stuck Helm Operations
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            
+            # Supprimer l'ancien release si coincé
+            echo 'Tentative de suppression forcée de l'ancien release...'
+            helm uninstall prometheus -n monitoring --wait=false || true
+            
+            # Nettoyer les secrets Helm
+            kubectl delete secret -n monitoring -l owner=helm,name=prometheus,status=pending --force --grace-period=0 || true
+            kubectl delete secret -n monitoring -l owner=helm,name=prometheus,status=deployed --force --grace-period=0 || true
+            
+            # Attendre quelques secondes
+            sleep 5
+          "
+
       - name: Execute deployment script
         run: |
           ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "sudo -E bash /home/ubuntu/deploy_monitoring.sh"
@@ -133,5 +186,3 @@ jobs:
         run: |
           rm -f ~/.ssh/id_rsa
           rm -f mono.crt mono.key
-
-      #test
