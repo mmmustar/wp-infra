@@ -5,7 +5,7 @@
 set -e  # Arrêter le script en cas d'erreur
 
 # Variables d'environnement
-DOMAIN_NAME=${1:-"test.mmustar.fr"}
+DOMAIN_NAME=${1:-"mmustar.fr"}
 EC2_USER="ubuntu"
 
 # Fonction pour exécuter des commandes avec affichage
@@ -111,15 +111,35 @@ install_traefik() {
         echo "Installation de Traefik..."
         run_cmd 'helm install traefik traefik/traefik \
             --namespace kube-system \
+            --timeout 5m \
             --set ingressClass.enabled=true \
             --set ingressClass.isDefaultClass=true'
     else
         echo "Traefik est déjà installé, mise à jour..."
-        run_cmd 'helm upgrade traefik traefik/traefik \
+        # Vérifier l'état actuel de Traefik
+        kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik
+        
+        # Essayer de mettre à jour avec un timeout plus long
+        if ! run_cmd 'helm upgrade traefik traefik/traefik \
             --namespace kube-system \
+            --timeout 5m \
             --set ingressClass.enabled=true \
-            --set ingressClass.isDefaultClass=true'
+            --set ingressClass.isDefaultClass=true'; then
+            
+            echo "La mise à jour a échoué. Tentative de réinstallation..."
+            run_cmd 'helm uninstall traefik -n kube-system'
+            sleep 30  # Attendre que les ressources soient nettoyées
+            run_cmd 'helm install traefik traefik/traefik \
+                --namespace kube-system \
+                --timeout 5m \
+                --set ingressClass.enabled=true \
+                --set ingressClass.isDefaultClass=true'
+        fi
     fi
+    
+    # Attendre que Traefik soit prêt
+    echo "Attente que Traefik soit prêt..."
+    kubectl rollout status deployment traefik -n kube-system --timeout=5m || true
 }
 
 # Installer la stack Prometheus
@@ -154,21 +174,21 @@ update_ingress_hostnames() {
     kubectl patch ingress -n monitoring prometheus-grafana --type=json -p '[
         {"op": "replace", "path": "/spec/rules/0/host", "value": "grafana-monitoring.mmustar.fr"},
         {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "grafana-monitoring.mmustar.fr"}
-    ]'
+    ]' || echo "Impossible de patcher Ingress Grafana - il utilise peut-être déjà les nouveaux noms"
     
     # Mettre à jour l'Ingress Prometheus
     echo "Mise à jour de l'Ingress Prometheus..."
     kubectl patch ingress -n monitoring prometheus-kube-prometheus-prometheus --type=json -p '[
         {"op": "replace", "path": "/spec/rules/0/host", "value": "prometheus-monitoring.mmustar.fr"},
         {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "prometheus-monitoring.mmustar.fr"}
-    ]'
+    ]' || echo "Impossible de patcher Ingress Prometheus - il utilise peut-être déjà les nouveaux noms"
     
     # Mettre à jour l'Ingress Alertmanager
     echo "Mise à jour de l'Ingress Alertmanager..."
     kubectl patch ingress -n monitoring prometheus-kube-prometheus-alertmanager --type=json -p '[
         {"op": "replace", "path": "/spec/rules/0/host", "value": "alertmanager-monitoring.mmustar.fr"},
         {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "alertmanager-monitoring.mmustar.fr"}
-    ]'
+    ]' || echo "Impossible de patcher Ingress Alertmanager - il utilise peut-être déjà les nouveaux noms"
 }
 
 # Fonction principale
@@ -196,6 +216,11 @@ main() {
     echo "Grafana:      https://grafana-monitoring.mmustar.fr"
     echo "Prometheus:   https://prometheus-monitoring.mmustar.fr"
     echo "AlertManager: https://alertmanager-monitoring.mmustar.fr"
+    echo "========================================================="
+    echo "Vérifiez que les entrées DNS correspondantes sont configurées dans Cloudflare."
+    echo "N'oubliez pas que les identifiants par défaut pour Grafana sont:"
+    echo "Utilisateur: admin"
+    echo "Mot de passe: celui défini dans le secret 'MONO_PASSWORD' sur GitHub"
     echo "========================================================="
 }
 
