@@ -40,6 +40,7 @@ reset_environment() {
         sleep 30
     fi
     
+    sudo chmod 644 /etc/rancher/k3s/k3s.yaml
     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
     if ! kubectl get nodes &> /dev/null; then
         echo "Erreur: L'API Kubernetes n'est pas accessible."
@@ -64,11 +65,12 @@ setup_helm() {
 # Installer Traefik
 install_traefik() {
     echo "Installation de Traefik..."
+    helm repo remove traefik || true
     helm repo add traefik https://helm.traefik.io/traefik
     helm repo update
-    if helm list -n kube-system | grep -q traefik; then
+    if helm list -n kube-system | grep -q traefik || k3s kubectl get all -n kube-system | grep -q traefik; then
         echo "Traefik déjà installé, suppression..."
-        helm uninstall traefik -n kube-system
+        k3s kubectl delete all --all -n kube-system --force --grace-period=0
         sleep 15
     fi
     helm install traefik traefik/traefik --namespace kube-system --timeout 5m \
