@@ -1,26 +1,114 @@
 grafana:
+  adminPassword: "admin"  # À remplacer par un mot de passe plus sécurisé
+  persistence:
+    enabled: true
+    storageClassName: local-path
+    size: 8Gi
   ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - grafana-monitoring.mmustar.fr
     tls:
-      - secretName: "monitoring-tls"  # Même secret pour tous
+      - secretName: "monitoring-tls"
         hosts:
           - grafana-monitoring.mmustar.fr
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
 
 prometheus:
+  prometheusSpec:
+    retention: 15d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
   ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - prometheus-monitoring.mmustar.fr
     tls:
-      - secretName: "monitoring-tls"  # Même secret pour tous
+      - secretName: "monitoring-tls"
         hosts:
           - prometheus-monitoring.mmustar.fr
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
 
 alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: local-path
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi
   ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - alertmanager-monitoring.mmustar.fr
     tls:
       - secretName: "monitoring-tls"
         hosts:
           - alertmanager-monitoring.mmustar.fr
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+      traefik.ingress.kubernetes.io/router.tls: "true"
+
+# Configuration pour collecter les métriques de l'instance EC2 et de WordPress
+prometheus:
+  additionalServiceMonitors:
+    - name: wordpress-monitor
+      selector:
+        matchLabels:
+          app.kubernetes.io/name: wordpress
+      namespaceSelector:
+        any: true
+      endpoints:
+        - port: metrics
+          interval: 15s
+          path: /metrics
+
+# Configuration des scrape jobs (cibles de monitoring)
+prometheus:
+  prometheusSpec:
+    additionalScrapeConfigs:
+      - job_name: node-exporter
+        static_configs:
+          - targets: ['localhost:9100']
+        
+      - job_name: kubernetes-pods
+        kubernetes_sd_configs:
+          - role: pod
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: true
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+            action: replace
+            target_label: __metrics_path__
+            regex: (.+)
+          - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+            action: replace
+            regex: ([^:]+)(?::\d+)?;(\d+)
+            replacement: $1:$2
+            target_label: __address__
 
 # Désactiver les composants inutiles
-kubeEtcd: {enabled: false}
-kubeControllerManager: {enabled: false}
-kubeScheduler: {enabled: false}
-kubeProxy: {enabled: false}
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false

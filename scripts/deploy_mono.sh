@@ -53,8 +53,32 @@ deploy_traefik() {
     --wait --timeout 5m
 }
 
+create_monitoring_namespace_and_secret() {
+  echo "🔐 Création du namespace et du secret TLS..."
+  
+  # Vérifier que les fichiers de certificat existent
+  if [ ! -f "/home/$EC2_USER/mono.crt" ] || [ ! -f "/home/$EC2_USER/mono.key" ]; then
+    die "Fichiers de certificat mono.crt ou mono.key non trouvés"
+  fi
+  
+  # Créer namespace monitoring
+  kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+  
+  # Créer le secret TLS
+  kubectl create secret tls monitoring-tls \
+    --cert=/home/$EC2_USER/mono.crt \
+    --key=/home/$EC2_USER/mono.key \
+    --namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+}
+
 deploy_prometheus_stack() {
-  echo "📡 Déploiement de la stack..."
+  echo "📡 Déploiement de la stack de monitoring..."
+  
+  # Vérifier que le fichier de valeurs existe
+  if [ ! -f "/home/$EC2_USER/prometheus-values.yaml" ]; then
+    die "Fichier prometheus-values.yaml non trouvé"
+  fi
+  
   helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
     --namespace monitoring \
     --create-namespace \
@@ -64,14 +88,24 @@ deploy_prometheus_stack() {
 }
 
 main() {
+  # Configurer kubectl
+  export KUBECONFIG="$KUBECONFIG"
+  echo "🔧 Utilisation de KUBECONFIG: $KUBECONFIG"
+  
   install_k3s
   install_helm
   setup_helm_repos
+  create_monitoring_namespace_and_secret
   deploy_traefik
   deploy_prometheus_stack
   
   echo -e "\n✅ Déploiement réussi !"
-  kubectl get pods -A
+  kubectl get pods -n monitoring
+  
+  echo -e "\n🌐 Accès URLs:"
+  echo "- Grafana:      https://grafana-monitoring.mmustar.fr"
+  echo "- Prometheus:   https://prometheus-monitoring.mmustar.fr"
+  echo "- AlertManager: https://alertmanager-monitoring.mmustar.fr"
 }
 
 main

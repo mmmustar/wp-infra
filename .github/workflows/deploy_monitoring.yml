@@ -17,33 +17,27 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          echo -e "Host *\n\tStrictHostKeyChecking no" > ~/.ssh/config
+          echo -e "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" > ~/.ssh/config
 
-      - name: Create certificate files and secrets
+      - name: Create certificate files
         run: |
-            # Créer le dossier .ssh
-            mkdir -p ~/.ssh
-        
-            # Générer les fichiers de certificat
-            echo "${{ secrets.CERTIF_MONO }}" > mono.crt
-            echo "${{ secrets.KEY_MONO }}" > mono.key
-        
-            # Créer le secret Kubernetes
-            kubectl create secret tls monitoring-tls \
-              --cert=mono.crt \
-              --key=mono.key \
-              -n monitoring --dry-run=client -o yaml | kubectl apply -f -
-
+          # Créer les fichiers de certificat et clé
+          echo "${{ secrets.CERTIF_MONO }}" > mono.crt
+          echo "${{ secrets.KEY_MONO }}" > mono.key
 
       - name: Transfer files
         run: |
-          scp -i ~/.ssh/id_rsa prometheus-values.yaml \
-            ubuntu@${{ secrets.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa mono.crt ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa mono.key ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/deploy_mono.sh ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
 
       - name: Execute deployment
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP }} \
-            "sudo apt-get update && sudo apt-get install -y curl && sudo /home/ubuntu/deploy_mono.sh"
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ secrets.EC2_IP_MONOV }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo -E /home/ubuntu/deploy_mono.sh"
 
       - name: Cleanup
-        run: rm -f ~/.ssh/id_rsa
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa
+          rm -f mono.crt mono.key
