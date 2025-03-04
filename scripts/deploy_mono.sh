@@ -64,15 +64,35 @@ setup_helm() {
 
 # Installer Traefik
 install_traefik() {
+    echo "Suppression forcée de Traefik..."
+    helm uninstall traefik -n kube-system || true
+
+    # Vérifier si Traefik est encore présent
+    if k3s kubectl get all -n kube-system | grep -q traefik; then
+        echo "Attente de 30 secondes pour suppression complète..."
+        sleep 30
+        k3s kubectl delete all --all -n kube-system --force --grace-period=0
+        sleep 10
+    fi
+
+    # Vérification finale avant réinstallation
+    if k3s kubectl get all -n kube-system | grep -q traefik; then
+        echo "Erreur : Traefik est toujours présent, abandon de l'installation."
+        exit 1
+    fi
+
+    # Maintenant on peut réinstaller proprement
     echo "Installation de Traefik..."
     helm repo remove traefik || true
     helm repo add traefik https://helm.traefik.io/traefik
     helm repo update
+    
     if helm list -n kube-system | grep -q traefik || k3s kubectl get all -n kube-system | grep -q traefik; then
         echo "Traefik déjà installé, suppression..."
         k3s kubectl delete all --all -n kube-system --force --grace-period=0
         sleep 15
     fi
+    
     helm install traefik traefik/traefik --namespace kube-system --timeout 5m \
         --set ingressClass.enabled=true --set ingressClass.isDefaultClass=true
     sleep 30

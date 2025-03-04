@@ -144,8 +144,8 @@ jobs:
 
       - name: Execute deployment script
         run: |
-            ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo /home/ubuntu/deploy_mono.sh || echo 'Échec du déploiement'"
-        
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo /home/ubuntu/deploy_mono.sh"
+
       - name: Cleanup sensitive files
         if: always()
         run: |
