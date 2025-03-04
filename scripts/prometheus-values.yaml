@@ -1,24 +1,23 @@
 grafana:
-  adminPassword: "$MONO_PASSWORD"
   ingress:
-    enabled: true
-    hosts: [grafana-monitoring.mmustar.fr]
-    annotations:
-      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    tls:
+      - secretName: "monitoring-tls"  # Même secret pour tous
+        hosts:
+          - grafana-monitoring.mmustar.fr
 
 prometheus:
   ingress:
-    enabled: true
-    hosts: [prometheus-monitoring.mmustar.fr]
-    annotations:
-      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    tls:
+      - secretName: "monitoring-tls"  # Même secret pour tous
+        hosts:
+          - prometheus-monitoring.mmustar.fr
 
 alertmanager:
   ingress:
-    enabled: true
-    hosts: [alertmanager-monitoring.mmustar.fr]
-    annotations:
-      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    tls:
+      - secretName: "monitoring-tls"
+        hosts:
+          - alertmanager-monitoring.mmustar.fr
 
 # Désactiver les composants inutiles
 kubeEtcd: {enabled: false}
