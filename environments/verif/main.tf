@@ -43,7 +43,7 @@ module "elastic_ip" {
   depends_on = [module.network]
 }
 
-# Module Database - Étape 3
+# Module Database - Étape 3f
 module "database" {
   source                 = "../modules/database"
   environment            = var.environment
@@ -83,30 +83,18 @@ module "compute" {
   depends_on = [module.network, module.security, module.database]
 }
 
-# AWS Secrets Manager pour stocker tous les secrets nécessaires
-resource "aws_secretsmanager_secret" "wordpress_config" {
-  name        = "${var.project_name}/${var.environment}/wordpress-config2"
-  description = "Configuration complète pour WordPress"
-  
-  # Empêcher la destruction accidentelle des secrets
-  lifecycle {
-    prevent_destroy = true
-  }
-}
 
-resource "aws_secretsmanager_secret_version" "wordpress_config" {
-  secret_id = aws_secretsmanager_secret.wordpress_config.id
-  secret_string = jsonencode({
-    MYSQL_DATABASE    = var.db_name
-    MYSQL_HOST        = module.database.db_instance_address
-    MYSQL_PASSWORD    = var.db_password
-    MYSQL_PORT        = "3306"
-    MYSQL_USER        = var.db_username
-    WP_DOMAIN         = var.wordpress_domain
-    WP_PUBLIC_IP      = module.compute.instance_public_ip
-  })
-  
-  lifecycle {
-    ignore_changes = [secret_string]
-  }
+module "monitoring" {
+  source            = "../modules/monitoring"
+  environment       = var.environment
+  project_name      = var.project_name
+  vpc_id            = module.network.vpc_id
+  subnet_id         = module.network.public_subnet_ids[1]
+  instance_type     = "t2.small"
+  ami_id            = var.ami_id
+  key_name          = var.key_name
+  instance_profile  = module.security.ec2_instance_profile_name
+  root_volume_size  = 20
+  data_volume_size  = 30
+  ssh_allowed_ips   = var.ssh_allowed_ips
 }

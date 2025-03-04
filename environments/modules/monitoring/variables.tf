@@ -1,5 +1,3 @@
-# environments/modules/monitoring/variables.tf
-
 variable "environment" {
   description = "Environnement (test/prod/verif)"
   type        = string
@@ -20,15 +18,10 @@ variable "subnet_id" {
   type        = string
 }
 
-variable "security_group_id" {
-  description = "ID du groupe de sécurité pour l'instance de monitoring"
-  type        = string
-}
-
 variable "instance_type" {
   description = "Type d'instance EC2"
   type        = string
-  default     = "t3.small"  # 2 CPU, 2 GB RAM - suffisant pour démarrer
+  default     = "t2.small"
 }
 
 variable "ami_id" {
@@ -43,7 +36,7 @@ variable "key_name" {
 }
 
 variable "instance_profile" {
-  description = "Nom du profil d'instance IAM"
+  description = "Nom du profil d'instance IAM pour l'instance de monitoring"
   type        = string
 }
 
@@ -57,4 +50,10 @@ variable "data_volume_size" {
   description = "Taille du volume de données pour Prometheus/Grafana en Go"
   type        = number
   default     = 30
+}
+
+variable "ssh_allowed_ips" {
+  description = "Liste des CIDR autorisés pour SSH"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
 }

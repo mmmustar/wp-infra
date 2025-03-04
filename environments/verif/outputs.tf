@@ -80,12 +80,6 @@ output "db_username" {
   value       = module.database.db_instance_username
 }
 
-# Output des secrets
-output "wordpress_config_secret_arn" {
-  description = "ARN du secret contenant la configuration WordPress"
-  value       = aws_secretsmanager_secret.wordpress_config.arn
-}
-
 # Output des URLs (dynamiques, basées sur les variables)
 
 output "wordpress_url" {

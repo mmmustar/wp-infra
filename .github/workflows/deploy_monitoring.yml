@@ -1,0 +1,195 @@
+name: Deploy Monitoring Stack
+
+on:
+  push:
+    branches:
+      - mono
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environnement de déploiement'
+        required: true
+        default: 'test'
+        type: choice
+        options:
+          - test
+          - verif
+          - prod
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo -e "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" > ~/.ssh/config
+
+      - name: Determine environment and IP
+        id: set-env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            DEPLOY_ENV="${{ github.event.inputs.environment }}"
+          else
+            DEPLOY_ENV="test"  # Default to test when pushing to mono branch
+          fi
+          
+          echo "DEPLOY_ENV=${DEPLOY_ENV}" >> $GITHUB_ENV
+          
+          # Déterminer l'IP en fonction de l'environnement
+          if [[ "${DEPLOY_ENV}" == "test" ]]; then
+            echo "EC2_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
+            echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
+          elif [[ "${DEPLOY_ENV}" == "verif" ]]; then
+            echo "EC2_IP=${{ secrets.EC2_IP_VERIF }}" >> $GITHUB_ENV
+            echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
+          elif [[ "${DEPLOY_ENV}" == "prod" ]]; then
+            echo "EC2_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
+            echo "DOMAIN=mmustar.fr" >> $GITHUB_ENV
+          fi
+
+      - name: Create certificate files
+        run: |
+          echo "${{ secrets.CLOUDFLARE_TEST_CRT }}" > cloudflare_test.crt
+          echo "${{ secrets.CLOUDFLARE_TEST_KEY }}" > cloudflare_test.key
+
+      - name: Create Prometheus Stack values file
+        run: |
+          cat > prometheus-values.yaml << EOF
+          grafana:
+            adminPassword: "${{ secrets.MONO_PASSWORD }}"
+            persistence:
+              enabled: true
+              storageClassName: local-path
+              size: 8Gi
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              hosts:
+                - grafana.monitoring.${{ env.DOMAIN }}
+              tls:
+                - secretName: grafana-tls
+                  hosts:
+                    - grafana.monitoring.${{ env.DOMAIN }}
+              annotations:
+                traefik.ingress.kubernetes.io/router.entrypoints: websecure
+
+          prometheus:
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              hosts:
+                - prometheus.monitoring.${{ env.DOMAIN }}
+              tls:
+                - secretName: prometheus-tls
+                  hosts:
+                    - prometheus.monitoring.${{ env.DOMAIN }}
+              annotations:
+                traefik.ingress.kubernetes.io/router.entrypoints: websecure
+            prometheusSpec:
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: local-path
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 10Gi
+
+          alertmanager:
+            ingress:
+              enabled: true
+              ingressClassName: traefik
+              hosts:
+                - alertmanager.monitoring.${{ env.DOMAIN }}
+              tls:
+                - secretName: alertmanager-tls
+                  hosts:
+                    - alertmanager.monitoring.${{ env.DOMAIN }}
+              annotations:
+                traefik.ingress.kubernetes.io/router.entrypoints: websecure
+            alertmanagerSpec:
+              storage:
+                volumeClaimTemplate:
+                  spec:
+                    storageClassName: local-path
+                    accessModes: ["ReadWriteOnce"]
+                    resources:
+                      requests:
+                        storage: 2Gi
+          EOF
+
+      - name: Copy files to EC2 instance
+        run: |
+          scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa cloudflare_test.crt ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa cloudflare_test.key ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+
+      - name: Install Monitoring Stack on EC2
+        run: |
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "
+            # Attendre que K3s soit prêt (important pour les nouvelles instances)
+            echo 'Vérification que K3s est bien démarré...'
+            export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+            until kubectl get nodes; do
+              echo 'Attente de K3s...'
+              sleep 5
+            done
+
+            # Créer le namespace monitoring
+            echo 'Création du namespace monitoring...'
+            kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+            # Créer les secrets TLS
+            echo 'Création des secrets TLS...'
+            kubectl create secret tls grafana-tls --cert=/home/ubuntu/cloudflare_test.crt --key=/home/ubuntu/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create secret tls prometheus-tls --cert=/home/ubuntu/cloudflare_test.crt --key=/home/ubuntu/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+            kubectl create secret tls alertmanager-tls --cert=/home/ubuntu/cloudflare_test.crt --key=/home/ubuntu/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -
+
+            # Installer Traefik si nécessaire
+            if ! kubectl get deployment -n kube-system traefik >/dev/null 2>&1; then
+              echo 'Installation de Traefik...'
+              helm repo add traefik https://helm.traefik.io/traefik
+              helm repo update
+              helm install traefik traefik/traefik \
+                --namespace kube-system \
+                --set ingressClass.enabled=true \
+                --set ingressClass.isDefaultClass=true
+            fi
+
+            # Installer Prometheus Stack
+            echo 'Installation de Prometheus Stack...'
+            helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+            helm repo update
+            helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+              --namespace monitoring \
+              -f /home/ubuntu/prometheus-values.yaml \
+              --version 45.27.2 \
+              --timeout 10m
+          "
+
+      - name: Cleanup sensitive files
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_rsa
+          rm -f cloudflare_test.crt cloudflare_test.key
+          rm -f prometheus-values.yaml
+
+      - name: Display Access URLs
+        run: |
+          echo "====================================================="
+          echo "Deployment successful! Access URLs:"
+          echo "---------------------------------------------------"
+          echo "Grafana:      https://grafana.monitoring.${{ env.DOMAIN }}"
+          echo "Prometheus:   https://prometheus.monitoring.${{ env.DOMAIN }}"
+          echo "AlertManager: https://alertmanager.monitoring.${{ env.DOMAIN }}"
+          echo "====================================================="
+          echo "Credentials:"
+          echo "Grafana username: admin"
+          echo "Grafana password: [Set via GitHub Secret MONO_PASSWORD]"
+          echo "====================================================="

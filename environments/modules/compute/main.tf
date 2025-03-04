@@ -109,9 +109,9 @@ resource "aws_ebs_volume" "wordpress_data" {
   }
   
   # Empêcher la destruction accidentelle du volume de données
-  lifecycle {
-    prevent_destroy = true
-  }
+#  lifecycle {
+#    prevent_destroy = true
+#  }
 }
 
 # Attachement du volume de données

@@ -24,8 +24,3 @@ output "db_instance_username" {
   description = "Nom d'utilisateur de la base de données"
   value       = aws_db_instance.wordpress.username
 }
-
-output "db_secret_arn" {
-  description = "ARN du secret contenant les identifiants de la base de données"
-  value       = aws_secretsmanager_secret.database_credentials.arn
-}

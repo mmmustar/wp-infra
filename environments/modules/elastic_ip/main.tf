@@ -11,8 +11,8 @@ resource "aws_eip" "wordpress" {
   }
 
   # Empêcher la destruction de l'EIP pour maintenir l'association avec Cloudflare
-  lifecycle {
-    prevent_destroy = true
-    ignore_changes = [tags]
-  }
+#  lifecycle {
+#    prevent_destroy = true
+#    ignore_changes = [tags]
+#  }
 }

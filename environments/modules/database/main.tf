@@ -40,7 +40,7 @@ resource "aws_db_parameter_group" "wordpress" {
   }
 }
 
-# Instances RDS MySQL avec optimisations de coûts
+# Instance RDS MySQL avec optimisations de coûts
 resource "aws_db_instance" "wordpress" {
   identifier             = "${var.project_name}-rds-wp-${var.environment}"
   allocated_storage      = var.allocated_storage
@@ -58,21 +58,17 @@ resource "aws_db_instance" "wordpress" {
   # Optimisations de coûts
   skip_final_snapshot    = true
   multi_az               = var.environment == "prod" ? var.multi_az : false
-  backup_retention_period = var.environment == "prod" ? 7 : 7  # 7 jours en prod, 1 jour en test
-  backup_window           = "03:00-04:00"  # Fenêtre de sauvegarde à 3h du matin UTC
-  maintenance_window      = "Sun:04:30-Sun:05:30"  # Maintenance le dimanche matin
+  backup_retention_period = var.environment == "prod" ? 7 : 7
+  backup_window           = "03:00-04:00"
+  maintenance_window      = "Sun:04:30-Sun:05:30"
   
   # Options de performances
-  performance_insights_enabled = var.environment == "prod"  # Désactivé en test pour réduire les coûts
+  performance_insights_enabled = var.environment == "prod"
   apply_immediately       = true
 
-  # Empêcher la destruction accidentelle
   lifecycle {
-    prevent_destroy = true
-    ignore_changes  = [
-      engine_version,  # Permet les mises à jour mineures sans changer le plan Terraform
-      tags
-    ]
+    # prevent_destroy = true
+    # ignore_changes  = [engine_version, tags]
   }
 
   tags = {
@@ -80,28 +76,4 @@ resource "aws_db_instance" "wordpress" {
     Environment = var.environment
     Project     = var.project_name
   }
-}
-
-# Secret pour stocker les identifiants de base de données
-resource "aws_secretsmanager_secret" "database_credentials" {
-  name        = "${var.project_name}/${var.environment}/database-credentials"
-  description = "Identifiants de connexion pour la base de données WordPress"
-  
-  tags = {
-    Name        = "${var.project_name}-db-credentials-${var.environment}"
-    Environment = var.environment
-    Project     = var.project_name
-  }
-}
-
-resource "aws_secretsmanager_secret_version" "database_credentials" {
-  secret_id = aws_secretsmanager_secret.database_credentials.id
-  secret_string = jsonencode({
-    username     = var.database_username
-    password     = var.database_password
-    host         = aws_db_instance.wordpress.address
-    port         = aws_db_instance.wordpress.port
-    database     = var.database_name
-    url          = "mysql://${var.database_username}:${var.database_password}@${aws_db_instance.wordpress.address}:${aws_db_instance.wordpress.port}/${var.database_name}"
-  })
 }

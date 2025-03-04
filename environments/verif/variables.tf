@@ -102,3 +102,9 @@ variable "wordpress_domain" {
   description = "Nom de domaine pour le site WordPress"
   type        = string
 }
+
+variable "ssh_allowed_ips" {
+  description = "Liste des CIDR autorisés pour SSH"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
