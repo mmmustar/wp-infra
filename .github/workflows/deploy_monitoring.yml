@@ -9,7 +9,7 @@ on:
       environment:
         description: 'Environnement de déploiement'
         required: true
-        default: 'test'
+        default: 'mono'
         type: choice
         options:
           - test
@@ -31,36 +31,34 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           echo -e "Host *\n\tStrictHostKeyChecking no\n\tUserKnownHostsFile=/dev/null" > ~/.ssh/config
 
-      - name: Determine environment and IP
-        id: set-env
+      - name: Set Environment Variables
+        id: env-vars
         run: |
+          # Détermine l'environnement
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             DEPLOY_ENV="${{ github.event.inputs.environment }}"
           else
-            DEPLOY_ENV="mono"  # Default to mono when pushing to mono branch
+            DEPLOY_ENV="mono"
           fi
           
-          echo "DEPLOY_ENV=${DEPLOY_ENV}" >> $GITHUB_ENV
-          
-          # Déterminer l'IP en fonction de l'environnement
-          if [[ "${DEPLOY_ENV}" == "test" ]]; then
-            echo "EC2_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
-            echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
-          elif [[ "${DEPLOY_ENV}" == "verif" ]]; then
-            echo "EC2_IP=${{ secrets.EC2_IP_VERIF }}" >> $GITHUB_ENV
-            echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
-          elif [[ "${DEPLOY_ENV}" == "prod" ]]; then
-            echo "EC2_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
-            echo "DOMAIN=mmustar.fr" >> $GITHUB_ENV
-          elif [[ "${DEPLOY_ENV}" == "mono" ]]; then
-            echo "EC2_IP=${{ secrets.EC2_IP_MONOV }}" >> $GITHUB_ENV
-            echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
+          # Configure les variables selon l'environnement
+          if [[ "$DEPLOY_ENV" == "test" ]]; then
+            echo "SERVER_IP=${{ secrets.EC2_IP_TEST }}" >> $GITHUB_ENV
+            echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
+          elif [[ "$DEPLOY_ENV" == "verif" ]]; then
+            echo "SERVER_IP=${{ secrets.EC2_IP_VERIF }}" >> $GITHUB_ENV
+            echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
+          elif [[ "$DEPLOY_ENV" == "prod" ]]; then
+            echo "SERVER_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
+            echo "DOMAIN_NAME=mmustar.fr" >> $GITHUB_ENV
+          elif [[ "$DEPLOY_ENV" == "mono" ]]; then
+            echo "SERVER_IP=${{ secrets.EC2_IP_MONOV }}" >> $GITHUB_ENV
+            echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
           fi
           
-          # Debug info - attention, ceci pourrait exposer l'IP dans les logs
-          echo "Deploying to environment: ${DEPLOY_ENV}"
-          echo "Using domain: ${{ env.DOMAIN }}"
-          echo "IP address is set"
+          echo "Environment: $DEPLOY_ENV"
+          echo "SERVER_IP is set" # Sécurité: ne pas afficher l'IP
+          echo "DOMAIN_NAME: $DOMAIN_NAME"
 
       - name: Create certificate files
         run: |
@@ -80,11 +78,11 @@ jobs:
               enabled: true
               ingressClassName: traefik
               hosts:
-                - grafana.monitoring.${{ env.DOMAIN }}
+                - grafana.monitoring.${{ env.DOMAIN_NAME }}
               tls:
                 - secretName: grafana-tls
                   hosts:
-                    - grafana.monitoring.${{ env.DOMAIN }}
+                    - grafana.monitoring.${{ env.DOMAIN_NAME }}
               annotations:
                 traefik.ingress.kubernetes.io/router.entrypoints: websecure
 
@@ -93,11 +91,11 @@ jobs:
               enabled: true
               ingressClassName: traefik
               hosts:
-                - prometheus.monitoring.${{ env.DOMAIN }}
+                - prometheus.monitoring.${{ env.DOMAIN_NAME }}
               tls:
                 - secretName: prometheus-tls
                   hosts:
-                    - prometheus.monitoring.${{ env.DOMAIN }}
+                    - prometheus.monitoring.${{ env.DOMAIN_NAME }}
               annotations:
                 traefik.ingress.kubernetes.io/router.entrypoints: websecure
             prometheusSpec:
@@ -115,11 +113,11 @@ jobs:
               enabled: true
               ingressClassName: traefik
               hosts:
-                - alertmanager.monitoring.${{ env.DOMAIN }}
+                - alertmanager.monitoring.${{ env.DOMAIN_NAME }}
               tls:
                 - secretName: alertmanager-tls
                   hosts:
-                    - alertmanager.monitoring.${{ env.DOMAIN }}
+                    - alertmanager.monitoring.${{ env.DOMAIN_NAME }}
               annotations:
                 traefik.ingress.kubernetes.io/router.entrypoints: websecure
             alertmanagerSpec:
@@ -133,20 +131,21 @@ jobs:
                         storage: 2Gi
           EOF
 
-      - name: Debug - Display IP variable
+      - name: Verify variables
         run: |
-          echo "EC2_IP environment variable is set to: ${{ env.EC2_IP }}"
+          echo "SERVER_IP is set (not displaying for security)"
+          echo "DOMAIN_NAME: ${{ env.DOMAIN_NAME }}"
           
       - name: Copy files to EC2 instance
         run: |
-          scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa cloudflare_test.crt ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
-          scp -i ~/.ssh/id_rsa cloudflare_test.key ubuntu@${{ env.EC2_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa cloudflare_test.crt ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa cloudflare_test.key ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
 
       - name: Install Monitoring Stack on EC2
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.EC2_IP }} "
-            # Attendre que K3s soit prêt (important pour les nouvelles instances)
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "
+            # Attendre que K3s soit prêt
             echo 'Vérification que K3s est bien démarré...'
             export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
             until kubectl get nodes; do
@@ -198,9 +197,9 @@ jobs:
           echo "====================================================="
           echo "Deployment successful! Access URLs:"
           echo "---------------------------------------------------"
-          echo "Grafana:      https://grafana.monitoring.${{ env.DOMAIN }}"
-          echo "Prometheus:   https://prometheus.monitoring.${{ env.DOMAIN }}"
-          echo "AlertManager: https://alertmanager.monitoring.${{ env.DOMAIN }}"
+          echo "Grafana:      https://grafana.monitoring.${{ env.DOMAIN_NAME }}"
+          echo "Prometheus:   https://prometheus.monitoring.${{ env.DOMAIN_NAME }}"
+          echo "AlertManager: https://alertmanager.monitoring.${{ env.DOMAIN_NAME }}"
           echo "====================================================="
           echo "Credentials:"
           echo "Grafana username: admin"
