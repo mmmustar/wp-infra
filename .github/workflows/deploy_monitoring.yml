@@ -15,6 +15,7 @@ on:
           - test
           - verif
           - prod
+          - mono
 
 jobs:
   deploy-monitoring:
@@ -36,7 +37,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             DEPLOY_ENV="${{ github.event.inputs.environment }}"
           else
-            DEPLOY_ENV="test"  # Default to test when pushing to mono branch
+            DEPLOY_ENV="mono"  # Default to mono when pushing to mono branch
           fi
           
           echo "DEPLOY_ENV=${DEPLOY_ENV}" >> $GITHUB_ENV
@@ -51,7 +52,15 @@ jobs:
           elif [[ "${DEPLOY_ENV}" == "prod" ]]; then
             echo "EC2_IP=${{ secrets.EC2_IP_PROD }}" >> $GITHUB_ENV
             echo "DOMAIN=mmustar.fr" >> $GITHUB_ENV
+          elif [[ "${DEPLOY_ENV}" == "mono" ]]; then
+            echo "EC2_IP=${{ secrets.EC2_IP_MONOV }}" >> $GITHUB_ENV
+            echo "DOMAIN=test.mmustar.fr" >> $GITHUB_ENV
           fi
+          
+          # Debug info - attention, ceci pourrait exposer l'IP dans les logs
+          echo "Deploying to environment: ${DEPLOY_ENV}"
+          echo "Using domain: ${{ env.DOMAIN }}"
+          echo "IP address is set"
 
       - name: Create certificate files
         run: |
@@ -124,6 +133,10 @@ jobs:
                         storage: 2Gi
           EOF
 
+      - name: Debug - Display IP variable
+        run: |
+          echo "EC2_IP environment variable is set to: ${{ env.EC2_IP }}"
+          
       - name: Copy files to EC2 instance
         run: |
           scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.EC2_IP }}:/home/ubuntu/

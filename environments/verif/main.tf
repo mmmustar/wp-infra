@@ -83,7 +83,6 @@ module "compute" {
   depends_on = [module.network, module.security, module.database]
 }
 
-
 module "monitoring" {
   source            = "../modules/monitoring"
   environment       = var.environment
