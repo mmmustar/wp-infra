@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script de déploiement de la stack de monitoring
+# Script de déploiement de la stack de monitoring avec réinitialisation
 # Usage: ./deploy_mono.sh [DOMAIN_NAME]
 
 set -e  # Arrêter le script en cas d'erreur
@@ -14,31 +14,72 @@ run_cmd() {
     eval "$1"
 }
 
-# Vérifier/installer K3s
-check_install_k3s() {
-    echo "Vérification de l'installation de K3s..."
+# Reset de l'environnement K3s
+reset_environment() {
+    echo "Réinitialisation de l'environnement..."
     
-    if ! command -v k3s &> /dev/null; then
-        echo "K3s n'est pas installé. Installation en cours..."
-        run_cmd 'curl -sfL https://get.k3s.io | sh -'
-        echo "Attente du démarrage de K3s (30s)..."
-        sleep 30
+    # Vérifier si K3s est installé
+    if command -v k3s &> /dev/null; then
+        echo "K3s est installé, vérification du service..."
+        
+        # Vérifier si le service K3s fonctionne
+        if systemctl status k3s &> /dev/null; then
+            echo "Le service K3s est en cours d'exécution."
+            
+            # Essayer d'accéder aux nœuds K3s
+            if ! k3s kubectl get nodes &> /dev/null; then
+                echo "Impossible d'accéder aux nœuds K3s. Tentative de redémarrage du service..."
+                systemctl restart k3s
+                sleep 30
+            fi
+        else
+            echo "Le service K3s n'est pas en cours d'exécution. Démarrage..."
+            systemctl start k3s
+            sleep 30
+        fi
     else
-        echo "K3s est déjà installé."
-    fi
-
-    # Vérifier que le service K3s est en cours d'exécution
-    if ! systemctl is-active --quiet k3s; then
-        echo "Démarrage du service K3s..."
-        run_cmd 'systemctl start k3s'
-        echo "Attente du démarrage de K3s (30s)..."
+        echo "K3s n'est pas installé. Installation..."
+        curl -sfL https://get.k3s.io | sh -
         sleep 30
     fi
     
-    # Créer un lien symbolique pour kubectl si nécessaire
-    if ! command -v kubectl &> /dev/null; then
-        echo "Configuration de kubectl..."
-        run_cmd 'ln -sf $(which k3s) /usr/local/bin/kubectl'
+    # Vérification finale
+    if ! k3s kubectl get nodes &> /dev/null; then
+        echo "K3s n'est toujours pas accessible. Réinstallation complète..."
+        systemctl stop k3s || true
+        systemctl disable k3s || true
+        
+        # Supprimer K3s proprement
+        /usr/local/bin/k3s-uninstall.sh || true
+        
+        # Réinstaller K3s
+        curl -sfL https://get.k3s.io | sh -
+        sleep 45
+        
+        # Vérification finale après réinstallation
+        if ! k3s kubectl get nodes &> /dev/null; then
+            echo "Échec de la réinstallation de K3s. Veuillez vérifier manuellement."
+            exit 1
+        fi
+    fi
+    
+    echo "K3s fonctionne correctement."
+    
+    # Créer un lien symbolique pour kubectl
+    ln -sf $(which k3s) /usr/local/bin/kubectl || true
+    
+    # Désinstaller Traefik s'il est installé
+    if k3s kubectl get deployment -n kube-system traefik &> /dev/null; then
+        echo "Désinstallation de Traefik..."
+        helm uninstall traefik -n kube-system || true
+        sleep 15
+    fi
+    
+    # Supprimer le namespace monitoring s'il existe
+    if k3s kubectl get namespace monitoring &> /dev/null; then
+        echo "Suppression du namespace monitoring..."
+        k3s kubectl delete namespace monitoring --timeout=5m || true
+        sleep 15
     fi
 }
 
@@ -51,7 +92,7 @@ setup_helm() {
         run_cmd 'curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3'
         run_cmd 'chmod +x get_helm.sh'
         run_cmd './get_helm.sh'
-        run_cmd 'rm get_helm.sh'
+        run_cmd 'rm -f get_helm.sh'
     else
         echo "Helm est déjà installé."
     fi
@@ -64,24 +105,9 @@ prepare_k8s_env() {
     # Configurer kubectl pour K3s
     export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
     
-    # Vérifier que les nœuds sont disponibles
-    echo "Vérification des nœuds K3s..."
-    MAX_RETRIES=10
-    COUNT=0
-    until kubectl get nodes &> /dev/null || [ $COUNT -eq $MAX_RETRIES ]; do
-        echo "Attente de K3s... (tentative $((COUNT+1))/$MAX_RETRIES)"
-        sleep 15
-        ((COUNT++))
-    done
-
-    if [ $COUNT -eq $MAX_RETRIES ]; then
-        echo "Erreur: K3s n'est pas accessible après plusieurs tentatives"
-        exit 1
-    fi
-    
     # Créer le namespace monitoring
     echo "Création du namespace monitoring..."
-    run_cmd 'kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -'
+    run_cmd 'k3s kubectl create namespace monitoring --dry-run=client -o yaml | k3s kubectl apply -f -'
 }
 
 # Déployer les secrets TLS
@@ -95,51 +121,28 @@ deploy_tls_secrets() {
     fi
     
     # Créer les secrets TLS
-    run_cmd 'kubectl create secret tls grafana-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -'
-    run_cmd 'kubectl create secret tls prometheus-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -'
-    run_cmd 'kubectl create secret tls alertmanager-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -'
+    run_cmd 'k3s kubectl create secret tls grafana-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | k3s kubectl apply -f -'
+    run_cmd 'k3s kubectl create secret tls prometheus-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | k3s kubectl apply -f -'
+    run_cmd 'k3s kubectl create secret tls alertmanager-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | k3s kubectl apply -f -'
 }
 
-# Installer ou mettre à jour Traefik
+# Installer Traefik
 install_traefik() {
-    echo "Vérification de l'installation de Traefik..."
+    echo "Installation de Traefik..."
     
     run_cmd 'helm repo add traefik https://helm.traefik.io/traefik'
     run_cmd 'helm repo update'
     
-    if ! kubectl get deployment -n kube-system traefik &> /dev/null; then
-        echo "Installation de Traefik..."
-        run_cmd 'helm install traefik traefik/traefik \
-            --namespace kube-system \
-            --timeout 5m \
-            --set ingressClass.enabled=true \
-            --set ingressClass.isDefaultClass=true'
-    else
-        echo "Traefik est déjà installé, mise à jour..."
-        # Vérifier l'état actuel de Traefik
-        kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik
-        
-        # Essayer de mettre à jour avec un timeout plus long
-        if ! run_cmd 'helm upgrade traefik traefik/traefik \
-            --namespace kube-system \
-            --timeout 5m \
-            --set ingressClass.enabled=true \
-            --set ingressClass.isDefaultClass=true'; then
-            
-            echo "La mise à jour a échoué. Tentative de réinstallation..."
-            run_cmd 'helm uninstall traefik -n kube-system'
-            sleep 30  # Attendre que les ressources soient nettoyées
-            run_cmd 'helm install traefik traefik/traefik \
-                --namespace kube-system \
-                --timeout 5m \
-                --set ingressClass.enabled=true \
-                --set ingressClass.isDefaultClass=true'
-        fi
-    fi
+    run_cmd 'helm install traefik traefik/traefik \
+        --namespace kube-system \
+        --timeout 5m \
+        --set ingressClass.enabled=true \
+        --set ingressClass.isDefaultClass=true'
     
     # Attendre que Traefik soit prêt
     echo "Attente que Traefik soit prêt..."
-    kubectl rollout status deployment traefik -n kube-system --timeout=5m || true
+    sleep 30
+    k3s kubectl rollout status deployment traefik -n kube-system --timeout=3m || true
 }
 
 # Installer la stack Prometheus
@@ -155,40 +158,11 @@ install_prometheus_stack() {
     # Ajouter le repo Helm et installer
     run_cmd 'helm repo add prometheus-community https://prometheus-community.github.io/helm-charts'
     run_cmd 'helm repo update'
-    run_cmd 'helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+    run_cmd 'helm install prometheus prometheus-community/kube-prometheus-stack \
         --namespace monitoring \
         -f /home/'$EC2_USER'/prometheus-values.yaml \
         --version 45.27.2 \
         --timeout 10m'
-}
-
-# Mise à jour des noms d'hôte dans les Ingress
-update_ingress_hostnames() {
-    echo "Mise à jour des noms d'hôte dans les Ingress..."
-    
-    # Attendre que les ressources soient créées
-    sleep 30
-    
-    # Mettre à jour l'Ingress Grafana
-    echo "Mise à jour de l'Ingress Grafana..."
-    kubectl patch ingress -n monitoring prometheus-grafana --type=json -p '[
-        {"op": "replace", "path": "/spec/rules/0/host", "value": "grafana-monitoring.mmustar.fr"},
-        {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "grafana-monitoring.mmustar.fr"}
-    ]' || echo "Impossible de patcher Ingress Grafana - il utilise peut-être déjà les nouveaux noms"
-    
-    # Mettre à jour l'Ingress Prometheus
-    echo "Mise à jour de l'Ingress Prometheus..."
-    kubectl patch ingress -n monitoring prometheus-kube-prometheus-prometheus --type=json -p '[
-        {"op": "replace", "path": "/spec/rules/0/host", "value": "prometheus-monitoring.mmustar.fr"},
-        {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "prometheus-monitoring.mmustar.fr"}
-    ]' || echo "Impossible de patcher Ingress Prometheus - il utilise peut-être déjà les nouveaux noms"
-    
-    # Mettre à jour l'Ingress Alertmanager
-    echo "Mise à jour de l'Ingress Alertmanager..."
-    kubectl patch ingress -n monitoring prometheus-kube-prometheus-alertmanager --type=json -p '[
-        {"op": "replace", "path": "/spec/rules/0/host", "value": "alertmanager-monitoring.mmustar.fr"},
-        {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "alertmanager-monitoring.mmustar.fr"}
-    ]' || echo "Impossible de patcher Ingress Alertmanager - il utilise peut-être déjà les nouveaux noms"
 }
 
 # Fonction principale
@@ -197,8 +171,10 @@ main() {
     echo "Déploiement de la stack de monitoring pour $DOMAIN_NAME"
     echo "========================================================="
     
+    # Reset de l'environnement
+    reset_environment
+    
     # Vérifier/installer les prérequis
-    check_install_k3s
     setup_helm
     
     # Déployer la stack
@@ -206,9 +182,6 @@ main() {
     deploy_tls_secrets
     install_traefik
     install_prometheus_stack
-    
-    # Mettre à jour les noms d'hôte
-    update_ingress_hostnames
     
     echo "========================================================="
     echo "Déploiement terminé! URLs d'accès:"
