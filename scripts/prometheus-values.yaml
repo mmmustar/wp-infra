@@ -1,15 +1,27 @@
-# Ajoutez ceci dans prometheus-values.yaml
-kubeApiServer:
-  enabled: false
-kubelet:
-  enabled: false
-kubeControllerManager:
-  enabled: false
-coreDns:
-  enabled: false
-kubeEtcd:
-  enabled: false
-kubeScheduler:
-  enabled: false
-kubeProxy:
-  enabled: false
+grafana:
+  adminPassword: "$MONO_PASSWORD"
+  ingress:
+    enabled: true
+    hosts: [grafana-monitoring.mmustar.fr]
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+
+prometheus:
+  ingress:
+    enabled: true
+    hosts: [prometheus-monitoring.mmustar.fr]
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+
+alertmanager:
+  ingress:
+    enabled: true
+    hosts: [alertmanager-monitoring.mmustar.fr]
+    annotations:
+      traefik.ingress.kubernetes.io/router.entrypoints: websecure
+
+# Désactiver les composants inutiles
+kubeEtcd: {enabled: false}
+kubeControllerManager: {enabled: false}
+kubeScheduler: {enabled: false}
+kubeProxy: {enabled: false}
