@@ -142,6 +142,35 @@ install_prometheus_stack() {
         --timeout 10m'
 }
 
+# Mise à jour des noms d'hôte dans les Ingress
+update_ingress_hostnames() {
+    echo "Mise à jour des noms d'hôte dans les Ingress..."
+    
+    # Attendre que les ressources soient créées
+    sleep 30
+    
+    # Mettre à jour l'Ingress Grafana
+    echo "Mise à jour de l'Ingress Grafana..."
+    kubectl patch ingress -n monitoring prometheus-grafana --type=json -p '[
+        {"op": "replace", "path": "/spec/rules/0/host", "value": "grafana-monitoring.mmustar.fr"},
+        {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "grafana-monitoring.mmustar.fr"}
+    ]'
+    
+    # Mettre à jour l'Ingress Prometheus
+    echo "Mise à jour de l'Ingress Prometheus..."
+    kubectl patch ingress -n monitoring prometheus-kube-prometheus-prometheus --type=json -p '[
+        {"op": "replace", "path": "/spec/rules/0/host", "value": "prometheus-monitoring.mmustar.fr"},
+        {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "prometheus-monitoring.mmustar.fr"}
+    ]'
+    
+    # Mettre à jour l'Ingress Alertmanager
+    echo "Mise à jour de l'Ingress Alertmanager..."
+    kubectl patch ingress -n monitoring prometheus-kube-prometheus-alertmanager --type=json -p '[
+        {"op": "replace", "path": "/spec/rules/0/host", "value": "alertmanager-monitoring.mmustar.fr"},
+        {"op": "replace", "path": "/spec/tls/0/hosts/0", "value": "alertmanager-monitoring.mmustar.fr"}
+    ]'
+}
+
 # Fonction principale
 main() {
     echo "========================================================="
@@ -158,12 +187,15 @@ main() {
     install_traefik
     install_prometheus_stack
     
+    # Mettre à jour les noms d'hôte
+    update_ingress_hostnames
+    
     echo "========================================================="
     echo "Déploiement terminé! URLs d'accès:"
     echo "---------------------------------------------------------"
-    echo "Grafana:      https://grafana.monitoring.$DOMAIN_NAME"
-    echo "Prometheus:   https://prometheus.monitoring.$DOMAIN_NAME"
-    echo "AlertManager: https://alertmanager.monitoring.$DOMAIN_NAME"
+    echo "Grafana:      https://grafana-monitoring.mmustar.fr"
+    echo "Prometheus:   https://prometheus-monitoring.mmustar.fr"
+    echo "AlertManager: https://alertmanager-monitoring.mmustar.fr"
     echo "========================================================="
 }
 

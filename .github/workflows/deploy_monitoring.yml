@@ -53,7 +53,7 @@ jobs:
             echo "DOMAIN_NAME=mmustar.fr" >> $GITHUB_ENV
           elif [[ "$DEPLOY_ENV" == "mono" ]]; then
             echo "SERVER_IP=${{ secrets.EC2_IP_MONOV }}" >> $GITHUB_ENV
-            echo "DOMAIN_NAME=test.mmustar.fr" >> $GITHUB_ENV
+            echo "DOMAIN_NAME=mmustar.fr" >> $GITHUB_ENV
           fi
           
           echo "Selected environment: $DEPLOY_ENV"
@@ -77,11 +77,11 @@ jobs:
               enabled: true
               ingressClassName: traefik
               hosts:
-                - grafana.monitoring.${{ env.DOMAIN_NAME }}
+                - grafana-monitoring.mmustar.fr
               tls:
                 - secretName: grafana-tls
                   hosts:
-                    - grafana.monitoring.${{ env.DOMAIN_NAME }}
+                    - grafana-monitoring.mmustar.fr
               annotations:
                 traefik.ingress.kubernetes.io/router.entrypoints: websecure
 
@@ -90,11 +90,11 @@ jobs:
               enabled: true
               ingressClassName: traefik
               hosts:
-                - prometheus.monitoring.${{ env.DOMAIN_NAME }}
+                - prometheus-monitoring.mmustar.fr
               tls:
                 - secretName: prometheus-tls
                   hosts:
-                    - prometheus.monitoring.${{ env.DOMAIN_NAME }}
+                    - prometheus-monitoring.mmustar.fr
               annotations:
                 traefik.ingress.kubernetes.io/router.entrypoints: websecure
             prometheusSpec:
@@ -112,11 +112,11 @@ jobs:
               enabled: true
               ingressClassName: traefik
               hosts:
-                - alertmanager.monitoring.${{ env.DOMAIN_NAME }}
+                - alertmanager-monitoring.mmustar.fr
               tls:
                 - secretName: alertmanager-tls
                   hosts:
-                    - alertmanager.monitoring.${{ env.DOMAIN_NAME }}
+                    - alertmanager-monitoring.mmustar.fr
               annotations:
                 traefik.ingress.kubernetes.io/router.entrypoints: websecure
             alertmanagerSpec:
@@ -130,16 +130,21 @@ jobs:
                         storage: 2Gi
           EOF
 
-      - name: Copy deployment script and files to EC2
+      - name: Verify variables
         run: |
-          scp -i ~/.ssh/id_rsa scripts/deploy_mono.sh ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
+          echo "SERVER_IP is set (not displaying for security)"
+          echo "DOMAIN_NAME: ${{ env.DOMAIN_NAME }}"
+          
+      - name: Copy files to EC2 instance
+        run: |
           scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa cloudflare_test.crt ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa cloudflare_test.key ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/deploy_mono.sh ubuntu@${{ env.SERVER_IP }}:/home/ubuntu/
 
       - name: Execute deployment script
         run: |
-          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo /home/ubuntu/deploy_mono.sh \"${{ env.DOMAIN_NAME }}\""
+          ssh -i ~/.ssh/id_rsa ubuntu@${{ env.SERVER_IP }} "chmod +x /home/ubuntu/deploy_mono.sh && sudo /home/ubuntu/deploy_mono.sh"
 
       - name: Cleanup sensitive files
         if: always()
@@ -153,9 +158,9 @@ jobs:
           echo "====================================================="
           echo "Deployment successful! Access URLs:"
           echo "---------------------------------------------------"
-          echo "Grafana:      https://grafana.monitoring.${{ env.DOMAIN_NAME }}"
-          echo "Prometheus:   https://prometheus.monitoring.${{ env.DOMAIN_NAME }}"
-          echo "AlertManager: https://alertmanager.monitoring.${{ env.DOMAIN_NAME }}"
+          echo "Grafana:      https://grafana-monitoring.mmustar.fr"
+          echo "Prometheus:   https://prometheus-monitoring.mmustar.fr"
+          echo "AlertManager: https://alertmanager-monitoring.mmustar.fr"
           echo "====================================================="
           echo "Credentials:"
           echo "Grafana username: admin"
