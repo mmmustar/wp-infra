@@ -100,20 +100,25 @@ deploy_tls_secrets() {
     run_cmd 'kubectl create secret tls alertmanager-tls --cert=/home/'$EC2_USER'/cloudflare_test.crt --key=/home/'$EC2_USER'/cloudflare_test.key -n monitoring --dry-run=client -o yaml | kubectl apply -f -'
 }
 
-# Installer Traefik s'il n'est pas déjà installé
+# Installer ou mettre à jour Traefik
 install_traefik() {
     echo "Vérification de l'installation de Traefik..."
     
+    run_cmd 'helm repo add traefik https://helm.traefik.io/traefik'
+    run_cmd 'helm repo update'
+    
     if ! kubectl get deployment -n kube-system traefik &> /dev/null; then
         echo "Installation de Traefik..."
-        run_cmd 'helm repo add traefik https://helm.traefik.io/traefik'
-        run_cmd 'helm repo update'
         run_cmd 'helm install traefik traefik/traefik \
             --namespace kube-system \
             --set ingressClass.enabled=true \
             --set ingressClass.isDefaultClass=true'
     else
-        echo "Traefik est déjà installé."
+        echo "Traefik est déjà installé, mise à jour..."
+        run_cmd 'helm upgrade traefik traefik/traefik \
+            --namespace kube-system \
+            --set ingressClass.enabled=true \
+            --set ingressClass.isDefaultClass=true'
     fi
 }
 
