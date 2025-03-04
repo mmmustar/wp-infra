@@ -1,5 +1,5 @@
 #!/bin/bash
-# Script de destruction du déploiement WordPress pour test.mmustar.fr
+# Script de destruction du déploiement WordPress pour test.mmustar.fr d
 
 # Configuration de base
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
