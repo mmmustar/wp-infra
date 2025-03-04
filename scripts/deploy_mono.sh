@@ -28,30 +28,37 @@ install_helm() {
   fi
 }
 
-setup_namespace() {
-  if ! kubectl get ns monitoring >/dev/null 2>&1; then
-    echo "📦 Création du namespace monitoring..."
-    kubectl create ns monitoring
-    sleep 3
-  fi
+setup_helm_repos() {
+  declare -A REPOS=(
+    ["traefik"]="https://helm.traefik.io/traefik"
+    ["prometheus-community"]="https://prometheus-community.github.io/helm-charts"
+  )
+  
+  for repo in "${!REPOS[@]}"; do
+    if ! helm repo list | grep -q "$repo"; then
+      echo "➕ Ajout repository $repo"
+      helm repo add "$repo" "${REPOS[$repo]}"
+    fi
+  done
+  helm repo update
 }
 
 deploy_traefik() {
   echo "🚦 Déploiement de Traefik..."
   helm upgrade --install traefik traefik/traefik \
     --namespace kube-system \
-    --repo https://helm.traefik.io/traefik \
     --set ingressClass.enabled=true \
     --set ingressClass.isDefaultClass=true \
-    --atomic
+    --atomic \
+    --wait --timeout 5m
 }
 
 deploy_prometheus_stack() {
   echo "📡 Déploiement de la stack..."
   helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
     --namespace monitoring \
+    --create-namespace \
     -f "/home/${EC2_USER}/prometheus-values.yaml" \
-    --repo https://prometheus-community.github.io/helm-charts \
     --atomic \
     --timeout 20m
 }
@@ -59,15 +66,12 @@ deploy_prometheus_stack() {
 main() {
   install_k3s
   install_helm
-  setup_namespace
+  setup_helm_repos
   deploy_traefik
   deploy_prometheus_stack
   
-  echo -e "\n✅ Déploiement réussi ! Vérifications :"
-  kubectl get pods -n monitoring
-  echo -e "\nAccès :"
-  echo "Grafana:      https://grafana-monitoring.${DOMAIN}"
-  echo "Prometheus:   https://prometheus-monitoring.${DOMAIN}"
+  echo -e "\n✅ Déploiement réussi !"
+  kubectl get pods -A
 }
 
 main
