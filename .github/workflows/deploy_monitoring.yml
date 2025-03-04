@@ -27,7 +27,7 @@ jobs:
 
       - name: Transfer files
         run: |
-          scp -i ~/.ssh/id_rsa prometheus-values.yaml ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
+          scp -i ~/.ssh/id_rsa scripts/prometheus-values.yaml ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa mono.crt ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa mono.key ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
           scp -i ~/.ssh/id_rsa scripts/deploy_mono.sh ubuntu@${{ secrets.EC2_IP_MONOV }}:/home/ubuntu/
