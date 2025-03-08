@@ -18,8 +18,7 @@ variable "project_name" {
 variable "ssh_allowed_ips" {
   description = "Liste des CIDR blocks autorisés à se connecter en SSH"
   type        = list(string)
-  default     = ["0.0.0.0/0"]  # À modifier pour limiter l'accès
-}
+  }
 
 variable "cloudflare_ip_ranges" {
   description = "Plages d'IP Cloudflare"
